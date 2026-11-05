@@ -127,3 +127,38 @@ _Append dated results here. Do not rewrite earlier entries; correct mistakes wit
 - Pre-existing untracked files preserved: `AGENTS.md`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg`.
 - Final `rtk git status --short --branch`: `main...origin/main`; modified tracked files are the six listed above; new files are `docs/PROJECT-SESSION-LOG.md` and `tencent-game-audit/report.go`; the three pre-existing untracked files remain untouched.
 - No commit, push, tag, GitHub release, server, or real-machine scan was performed. Temporary validation executable and ZIP were written outside the repository.
+
+### 2026-11-05 — GitHub publication and main-branch protection
+
+**User request (available wording):** “沒上傳至github? 顯示 您的主分支未受保護。防止強制推送或刪除此分支，或要求在合併前進行狀態檢查。”
+
+**Repository inspection:**
+- `rtk git status --short --branch`: local completion changes were uncommitted; remote `origin/main` still pointed to `617e158`.
+- `rtk git remote -v`: origin is `https://github.com/fengnaiouo/Tencent-Game-Audit.git`.
+- `rtk gh auth status`: authenticated as `fengnaiouo`; token scopes reported by gh were `gist`, `read:org`, `repo`, and `workflow` (token value intentionally not recorded).
+- `rtk gh repo view fengnaiouo/Tencent-Game-Audit --json nameWithOwner,defaultBranchRef,url,visibility`: confirmed public repository and default branch `main`.
+- `rtk gh api repos/fengnaiouo/Tencent-Game-Audit/branches/main/protection`: returned HTTP 404, confirming `main` had no branch protection before this operation.
+- Read `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `CONTRIBUTING.md`, and `GOVERNANCE.md` to determine required check names and merge policy.
+
+**Publication operations:**
+- Created branch `chore/protect-main-and-publish-completion` with `rtk git switch -c ...`.
+- Explicitly staged only `AGENTS.md`, `CHANGELOG.md`, `README.md`, `docs/PROJECT-SESSION-LOG.md`, `tencent-game-audit/README.md`, `tencent-game-audit/main.go`, `tencent-game-audit/main_test.go`, `tencent-game-audit/report.go`, and `tencent-game-audit/windows_audit.go`.
+- Excluded and preserved unrelated untracked `k2f-iocs-reference.csv` and `riju-x-post.jpg`.
+- The first staged `rtk git diff --cached --check` found extra blank lines at EOF in the two new Markdown files. Normalized those files to one final newline, re-staged, and the check passed.
+- `rtk git commit -m "feat: complete audit reports and project logging"`: created commit `4de9667` (9 files changed; 644 insertions, 16 deletions).
+- `rtk git push -u origin chore/protect-main-and-publish-completion`: succeeded; remote feature branch created.
+- `rtk gh pr create ...`: created PR #6, https://github.com/fengnaiouo/Tencent-Game-Audit/pull/6, targeting `main`.
+
+**Branch protection operations:**
+- An initial `gh api ... -X PUT` attempt used object-shaped values for fields that the GitHub endpoint expects as booleans; GitHub returned HTTP 422 and made no change.
+- Retried with boolean values; `rtk gh api repos/fengnaiouo/Tencent-Game-Audit/branches/main/protection -X PUT ...` succeeded.
+- Enabled protection for administrators; disabled force pushes and branch deletion; required PRs; required strict status check `Test and vet`; enabled conversation resolution; set required approving reviews to 0 to allow a solo maintainer to merge after CI. Restrictions are not limited to a named push team.
+- Verified the endpoint response showed `strict: true`, context `Test and vet`, `enforce_admins.enabled: true`, `allow_force_pushes.enabled: false`, `allow_deletions.enabled: false`, and `required_conversation_resolution.enabled: true`.
+
+**GitHub Actions validation and maintenance:**
+- `rtk gh pr view 6 ...`: PR was mergeable and CI was initially in progress.
+- `rtk gh run watch 42011830498 --repo fengnaiouo/Tencent-Game-Audit --exit-status`: CI job `Test and vet` passed; its Test, Vet, and Windows x64 build steps all succeeded.
+- The successful run warned that `actions/checkout@v4` and `actions/setup-go@v5` were running under the Node.js 24 compatibility transition. Queried latest upstream release tags using `rtk gh api repos/actions/checkout/releases/latest`, `.../setup-go/...`, and `.../softprops/action-gh-release/...`; results were `v7.0.1`, `v7.0.0`, and `v3.0.3` respectively.
+- Updated `.github/workflows/ci.yml` to `actions/checkout@v7` and `actions/setup-go@v7`; updated `.github/workflows/release.yml` to those versions and `softprops/action-gh-release@v3`. This triggers a fresh PR CI run; its result must be recorded after it completes.
+
+**Current state at this log entry:** PR #6 is published; `main` branch protection is active; the first CI run passed, and a workflow dependency update is pending a fresh CI run. No main-branch merge or GitHub Release is claimed until separately verified.
