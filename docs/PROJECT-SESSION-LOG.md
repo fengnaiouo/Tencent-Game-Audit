@@ -316,5 +316,15 @@ _Append dated results here. Do not rewrite earlier entries; correct mistakes wit
 - No actual game directory, candidate PE, or user report was rescanned or modified; tests used synthetic bytes only.
 
 **Publication pending:** PR/CI, merge, tag, and release verification remain to be completed.
+
+**Publication completed:**
+- Staged only the seven intended source/documentation files; pre-existing unrelated untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` were not staged.
+- Created feature commit `6800079` on `fix/luajit-signature-and-authenticode` and opened [PR #14](https://github.com/fengnaiouo/Tencent-Game-Audit/pull/14).
+- Required CI run [42034700816](https://github.com/fengnaiouo/Tencent-Game-Audit/actions/runs/42034700816) passed: Go tests, vet, and Windows x64 build.
+- Merged PR #14 at `2026-11-05T13:20:07Z`; merge commit `e42713dd855f44f27213fad92378a66dfcd18135`. Local `main` and `origin/main` are synchronized at this commit.
+- Created and pushed annotated tag `v0.8.0`. Release workflow [42034898065](https://github.com/fengnaiouo/Tencent-Game-Audit/actions/runs/42034898065) completed successfully and published [GitHub Release v0.8.0](https://github.com/fengnaiouo/Tencent-Game-Audit/releases/tag/v0.8.0).
+- Release assets: `Tencent-Game-Audit-Windows-x64.zip` (1,709,543 bytes) and `SHA256SUMS.txt` (102 bytes). Downloaded the published ZIP, verified it against the published checksum file, extracted it, and ran the executable; it printed `Tencent Game Audit v0.8.0`. ZIP SHA-256: `3052f5551b24b3c45a91426497ed0414e0f63197871a76b406ca74dc7d77ac08`.
+- Release workflow emitted the existing non-blocking Node.js 20 deprecation annotation for `actions/upload-artifact@v4`; packaging and publication both succeeded.
+- Final `rtk git status --short --branch`: `main...origin/main`; only pre-existing untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain. No server was started and no actual game files were scanned.
 - The repository build script was deliberately not used because it overwrites pre-existing root EXE and portable ZIP artifacts. The Windows build will be written to a unique OS temporary path instead.
 - Pre-existing untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain untouched and excluded from staging. No server or real game scan was started.
