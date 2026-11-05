@@ -40,8 +40,8 @@ func writeReport(path, format string, report *Report) error {
 
 func renderTextReport(r *Report) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Tencent Game Audit v%s\nGenerated: %s\nLanguage: %s\nMode: %s\nComputer: %s\nUser: %s\nScanned files: %d\nLog files analyzed: %d\nSkipped files: %d\nGames/paths: %d\nFindings: %d\nSystem snapshot collected: %t\nScan roots:\n",
-		r.Version, r.Generated, r.Language, r.Mode, r.Computer, r.User, r.ScannedFiles, r.LogFilesScanned, r.SkippedFiles, len(r.Games), len(r.Findings), r.SystemSnapshotCollected)
+	fmt.Fprintf(&b, "Tencent Game Audit v%s\nGenerated: %s\nLanguage: %s\nMode: %s\nComputer: %s\nUser: %s\nScanned files: %d\nFilesystem entries visited: %d\nDirectories visited: %d\nUnreadable entries: %d\nReparse points not followed: %d\nTraversal complete: %t\nContent analyses incomplete: %d\nLog files analyzed: %d\nSkipped files: %d\nGames/paths: %d\nFindings: %d\nSystem snapshot collected: %t\nScan roots:\n",
+		r.Version, r.Generated, r.Language, r.Mode, r.Computer, r.User, r.ScannedFiles, r.EntriesVisited, r.DirectoriesVisited, r.UnreadableEntries, r.ReparsePointsSkipped, r.TraversalComplete, r.ContentAnalysisIncomplete, r.LogFilesScanned, r.SkippedFiles, len(r.Games), len(r.Findings), r.SystemSnapshotCollected)
 	for _, root := range r.ScanRoots {
 		fmt.Fprintf(&b, "- %s\n", root)
 	}
@@ -76,8 +76,8 @@ func markdownCell(value string) string {
 
 func renderMarkdownReport(r *Report) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# Tencent Game Audit v%s\n\n- Generated: %s\n- Language: %s\n- Mode: %s\n- Computer: %s\n- User: %s\n- Scanned files: %d\n- Log files analyzed: %d\n- Skipped files: %d\n- System snapshot collected: %t\n\n## Scan roots\n\n",
-		r.Version, markdownCell(r.Generated), markdownCell(r.Language), markdownCell(r.Mode), markdownCell(r.Computer), markdownCell(r.User), r.ScannedFiles, r.LogFilesScanned, r.SkippedFiles, r.SystemSnapshotCollected)
+	fmt.Fprintf(&b, "# Tencent Game Audit v%s\n\n- Generated: %s\n- Language: %s\n- Mode: %s\n- Computer: %s\n- User: %s\n- Scanned files: %d\n- Filesystem entries visited: %d\n- Directories visited: %d\n- Unreadable entries: %d\n- Reparse points not followed: %d\n- Traversal complete: %t\n- Content analyses incomplete: %d\n- Log files analyzed: %d\n- Skipped files: %d\n- System snapshot collected: %t\n\n## Scan roots\n\n",
+		r.Version, markdownCell(r.Generated), markdownCell(r.Language), markdownCell(r.Mode), markdownCell(r.Computer), markdownCell(r.User), r.ScannedFiles, r.EntriesVisited, r.DirectoriesVisited, r.UnreadableEntries, r.ReparsePointsSkipped, r.TraversalComplete, r.ContentAnalysisIncomplete, r.LogFilesScanned, r.SkippedFiles, r.SystemSnapshotCollected)
 	for _, root := range r.ScanRoots {
 		fmt.Fprintf(&b, "- %s\n", markdownCell(root))
 	}
@@ -115,7 +115,7 @@ body{font:15px/1.5 system-ui,sans-serif;max-width:1200px;margin:2rem auto;paddin
 h1,h2{line-height:1.2}table{border-collapse:collapse;width:100%;margin:1rem 0;table-layout:fixed}th,td{border:1px solid #ccc;padding:.5rem;text-align:left;vertical-align:top;overflow-wrap:anywhere}th{background:#f2f3f5}
 .meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.5rem}.meta div{padding:.6rem;background:#f6f7f8}.warning{padding:.8rem;border-left:4px solid #b7791f;background:#fffaf0}
 </style></head><body><h1>Tencent Game Audit v{{.Version}}</h1>
-<section class="meta"><div>Generated: {{.Generated}}</div><div>Language: {{.Language}}</div><div>Mode: {{.Mode}}</div><div>Computer: {{.Computer}}</div><div>User: {{.User}}</div><div>Scanned: {{.ScannedFiles}}</div><div>Logs analyzed: {{.LogFilesScanned}}</div><div>Skipped: {{.SkippedFiles}}</div><div>System snapshot collected: {{.SystemSnapshotCollected}}</div></section>
+<section class="meta"><div>Generated: {{.Generated}}</div><div>Language: {{.Language}}</div><div>Mode: {{.Mode}}</div><div>Computer: {{.Computer}}</div><div>User: {{.User}}</div><div>Scanned files: {{.ScannedFiles}}</div><div>Filesystem entries visited: {{.EntriesVisited}}</div><div>Directories visited: {{.DirectoriesVisited}}</div><div>Unreadable entries: {{.UnreadableEntries}}</div><div>Reparse points not followed: {{.ReparsePointsSkipped}}</div><div>Traversal complete: {{.TraversalComplete}}</div><div>Content analyses incomplete: {{.ContentAnalysisIncomplete}}</div><div>Logs analyzed: {{.LogFilesScanned}}</div><div>Skipped: {{.SkippedFiles}}</div><div>System snapshot collected: {{.SystemSnapshotCollected}}</div></section>
 <h2>Scan roots</h2><ul>{{range .ScanRoots}}<li>{{.}}</li>{{else}}<li>No explicit roots recorded.</li>{{end}}</ul>
 <h2>Game inventory ({{len .Games}})</h2><table><thead><tr><th>Title</th><th>Publisher</th><th>Install path</th><th>Source</th><th>Relationship</th></tr></thead><tbody>{{range .Games}}<tr><td>{{.Title}}</td><td>{{.Publisher}}</td><td>{{.InstallPath}}</td><td>{{.Source}}</td><td>{{.Relation}}</td></tr>{{else}}<tr><td colspan="5">No game paths recorded.</td></tr>{{end}}</tbody></table>
 <h2>Findings ({{len .Findings}})</h2><table><thead><tr><th>Severity</th><th>Category</th><th>Path</th><th>Evidence</th><th>Confidence</th><th>Signature</th><th>Signer</th></tr></thead><tbody>{{range .Findings}}<tr><td>{{.Severity}}</td><td>{{.Category}}</td><td>{{.Path}}</td><td>{{.Evidence}}</td><td>{{.Confidence}}</td><td>{{.SignatureStatus}}</td><td>{{.Signer}}</td></tr>{{else}}<tr><td colspan="7">No findings recorded.</td></tr>{{end}}</tbody></table>
@@ -152,7 +152,7 @@ func csvSafeCell(value string) string {
 func renderCSVReport(r *Report) ([]byte, error) {
 	var b strings.Builder
 	w := csv.NewWriter(&b)
-	if err := w.Write([]string{"record_type", "scanner_version", "generated", "language", "mode", "scanned_files", "skipped_files", "severity", "category", "title", "publisher", "install_path", "source", "relationship", "path", "evidence", "confidence", "signature_status", "signer", "log_files_scanned", "scan_roots", "system_snapshot_collected"}); err != nil {
+	if err := w.Write([]string{"record_type", "scanner_version", "generated", "language", "mode", "scanned_files", "skipped_files", "severity", "category", "title", "publisher", "install_path", "source", "relationship", "path", "evidence", "confidence", "signature_status", "signer", "log_files_scanned", "scan_roots", "system_snapshot_collected", "filesystem_entries_visited", "directories_visited", "unreadable_entries", "reparse_points_skipped", "traversal_complete", "content_analysis_incomplete"}); err != nil {
 		return nil, err
 	}
 	write := func(row []string) error {
@@ -162,7 +162,8 @@ func renderCSVReport(r *Report) ([]byte, error) {
 		return w.Write(row)
 	}
 	roots := strings.Join(r.ScanRoots, ";")
-	base := []string{"summary", r.Version, r.Generated, r.Language, r.Mode, fmt.Sprint(r.ScannedFiles), fmt.Sprint(r.SkippedFiles), "", "", "", "", "", "", "", "", "", "", "", "", fmt.Sprint(r.LogFilesScanned), roots, fmt.Sprint(r.SystemSnapshotCollected)}
+	coverage := []string{fmt.Sprint(r.EntriesVisited), fmt.Sprint(r.DirectoriesVisited), fmt.Sprint(r.UnreadableEntries), fmt.Sprint(r.ReparsePointsSkipped), fmt.Sprint(r.TraversalComplete), fmt.Sprint(r.ContentAnalysisIncomplete)}
+	base := append([]string{"summary", r.Version, r.Generated, r.Language, r.Mode, fmt.Sprint(r.ScannedFiles), fmt.Sprint(r.SkippedFiles), "", "", "", "", "", "", "", "", "", "", "", "", fmt.Sprint(r.LogFilesScanned), roots, fmt.Sprint(r.SystemSnapshotCollected)}, coverage...)
 	if err := write(base); err != nil {
 		return nil, err
 	}
@@ -170,17 +171,17 @@ func renderCSVReport(r *Report) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := write([]string{"system_snapshot", r.Version, r.Generated, r.Language, r.Mode, fmt.Sprint(r.ScannedFiles), fmt.Sprint(r.SkippedFiles), "", "", "", "", "", "", "", "", string(snapshot), "", "", "", fmt.Sprint(r.LogFilesScanned), roots, fmt.Sprint(r.SystemSnapshotCollected)}); err != nil {
+	if err := write(append([]string{"system_snapshot", r.Version, r.Generated, r.Language, r.Mode, fmt.Sprint(r.ScannedFiles), fmt.Sprint(r.SkippedFiles), "", "", "", "", "", "", "", "", string(snapshot), "", "", "", fmt.Sprint(r.LogFilesScanned), roots, fmt.Sprint(r.SystemSnapshotCollected)}, coverage...)); err != nil {
 		return nil, err
 	}
 	for _, g := range r.Games {
-		row := []string{"game", r.Version, r.Generated, r.Language, r.Mode, fmt.Sprint(r.ScannedFiles), fmt.Sprint(r.SkippedFiles), "", "", g.Title, g.Publisher, g.InstallPath, g.Source, g.Relation, "", "", "", "", "", fmt.Sprint(r.LogFilesScanned), roots, fmt.Sprint(r.SystemSnapshotCollected)}
+		row := append([]string{"game", r.Version, r.Generated, r.Language, r.Mode, fmt.Sprint(r.ScannedFiles), fmt.Sprint(r.SkippedFiles), "", "", g.Title, g.Publisher, g.InstallPath, g.Source, g.Relation, "", "", "", "", "", fmt.Sprint(r.LogFilesScanned), roots, fmt.Sprint(r.SystemSnapshotCollected)}, coverage...)
 		if err := write(row); err != nil {
 			return nil, err
 		}
 	}
 	for _, f := range r.Findings {
-		row := []string{"finding", r.Version, r.Generated, r.Language, r.Mode, fmt.Sprint(r.ScannedFiles), fmt.Sprint(r.SkippedFiles), f.Severity, f.Category, "", "", "", "", "", f.Path, f.Evidence, f.Confidence, f.SignatureStatus, f.Signer, fmt.Sprint(r.LogFilesScanned), roots, fmt.Sprint(r.SystemSnapshotCollected)}
+		row := append([]string{"finding", r.Version, r.Generated, r.Language, r.Mode, fmt.Sprint(r.ScannedFiles), fmt.Sprint(r.SkippedFiles), f.Severity, f.Category, "", "", "", "", "", f.Path, f.Evidence, f.Confidence, f.SignatureStatus, f.Signer, fmt.Sprint(r.LogFilesScanned), roots, fmt.Sprint(r.SystemSnapshotCollected)}, coverage...)
 		if err := write(row); err != nil {
 			return nil, err
 		}

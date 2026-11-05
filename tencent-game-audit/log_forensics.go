@@ -17,8 +17,6 @@ import (
 
 const (
 	maxLogFileBytes = 16 << 20
-	maxLogFiles     = 20000
-	maxLogFilesRoot = 10000
 )
 
 type logRule struct {
@@ -78,14 +76,9 @@ func isLogCandidate(path string) bool {
 	return false
 }
 
-func scanLogFiles(roots []string, r *Report, strictRoots bool) {
+func scanLogFiles(roots []string, r *Report, _ bool) {
 	seen := map[string]bool{}
-	globalCount := 0
 	for _, root := range unique(roots) {
-		if globalCount >= maxLogFiles {
-			addFinding(r, "INFO", "Log discovery limit", root, fmt.Sprintf("Stopped after %d candidate log files", maxLogFiles), "scan limitation")
-			break
-		}
 		info, err := os.Stat(root)
 		if err != nil {
 			continue // scanRoots already reports unavailable roots.
@@ -95,19 +88,19 @@ func scanLogFiles(roots []string, r *Report, strictRoots bool) {
 				key := strings.ToLower(filepath.Clean(root))
 				if !seen[key] {
 					seen[key] = true
-					globalCount++
 					inspectLogFile(root, info.Size(), r)
 				}
 			}
 			continue
 		}
-		rootCount := 0
-		_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		walkErr := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 			if walkErr != nil {
+				r.TraversalComplete = false
+				addFinding(r, "INFO", "Log directory entry unavailable", path, "Could not inspect log candidate entry: "+walkErr.Error(), "scan limitation")
 				return nil
 			}
 			if entry.IsDir() {
-				if path != root && (entry.Type()&os.ModeSymlink != 0 || (!strictRoots && skipDir(entry.Name()))) {
+				if entry.Type()&os.ModeSymlink != 0 {
 					return filepath.SkipDir
 				}
 				return nil
@@ -119,42 +112,40 @@ func scanLogFiles(roots []string, r *Report, strictRoots bool) {
 			if seen[key] {
 				return nil
 			}
-			if globalCount >= maxLogFiles || rootCount >= maxLogFilesRoot {
-				return filepath.SkipAll
-			}
 			seen[key] = true
-			globalCount++
-			rootCount++
 			fi, err := entry.Info()
 			if err != nil {
 				r.SkippedFiles++
+				r.ContentAnalysisIncomplete++
+				r.TraversalComplete = false
 				addFinding(r, "INFO", "Log metadata unavailable", path, "Could not inspect log metadata: "+err.Error(), "scan limitation")
 				return nil
 			}
 			inspectLogFile(path, fi.Size(), r)
 			return nil
 		})
-		if rootCount >= maxLogFilesRoot {
-			addFinding(r, "INFO", "Per-root log discovery limit", root, fmt.Sprintf("Stopped after %d candidate log files in this root", maxLogFilesRoot), "scan limitation")
+		if walkErr != nil {
+			r.TraversalComplete = false
+			addFinding(r, "INFO", "Log directory traversal failure", root, "Log discovery traversal ended with an error: "+walkErr.Error(), "scan limitation")
 		}
-	}
-	if globalCount >= maxLogFiles {
-		addFinding(r, "INFO", "Global log discovery limit", "", fmt.Sprintf("Stopped after %d candidate log files", maxLogFiles), "scan limitation")
 	}
 }
 
 func inspectLogFile(path string, size int64, r *Report) {
 	if size <= 0 {
+		r.LogFilesScanned++
 		return
 	}
 	if size > maxLogFileBytes {
 		r.SkippedFiles++
+		r.ContentAnalysisIncomplete++
 		addFinding(r, "INFO", "Log file size limit", path, fmt.Sprintf("Log is %d bytes; maximum text-log analysis size is %d bytes", size, maxLogFileBytes), "scan limitation")
 		return
 	}
 	f, err := os.Open(path)
 	if err != nil {
 		r.SkippedFiles++
+		r.ContentAnalysisIncomplete++
 		addFinding(r, "INFO", "Log file read failure", path, "Could not read candidate log: "+err.Error(), "scan limitation")
 		return
 	}
@@ -162,11 +153,13 @@ func inspectLogFile(path string, size int64, r *Report) {
 	closeErr := f.Close()
 	if readErr != nil || closeErr != nil {
 		r.SkippedFiles++
+		r.ContentAnalysisIncomplete++
 		addFinding(r, "INFO", "Log file read failure", path, "Could not read complete candidate log", "scan limitation")
 		return
 	}
 	if int64(len(b)) > maxLogFileBytes {
 		r.SkippedFiles++
+		r.ContentAnalysisIncomplete++
 		addFinding(r, "INFO", "Log file size limit", path, "Candidate log exceeded the bounded read limit", "scan limitation")
 		return
 	}
@@ -188,6 +181,7 @@ func inspectLogFile(path string, size int64, r *Report) {
 	}
 	text, ok := decodeLogText(b)
 	if !ok {
+		r.ContentAnalysisIncomplete++
 		addFinding(r, "INFO", "Non-text log candidate", path, "File has a binary or unsupported encoding; content was not rendered as log text. SHA256="+sha+". Static signature checks were still applied.", "scan limitation")
 		return
 	}
