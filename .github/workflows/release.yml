@@ -29,6 +29,16 @@ jobs:
       - name: Vet
         working-directory: tencent-game-audit
         run: go vet ./...
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          rust-src-dir: rust-core
+      - name: Validate Rust core
+        working-directory: rust-core
+        run: |
+          cargo fmt --all -- --check
+          cargo test --locked
+          cargo clippy --locked --all-targets -- -D warnings
       - name: Build and package
         shell: pwsh
         working-directory: tencent-game-audit

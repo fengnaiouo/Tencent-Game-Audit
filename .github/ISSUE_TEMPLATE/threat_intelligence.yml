@@ -1,0 +1,71 @@
+name: Threat intelligence submission
+description: Submit a sourced, defensive IOC or detection lead for review.
+title: "intel: "
+labels: [detection-review, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: "Public submissions must be safe to disclose. Never attach live malware, exploit code, credentials, private samples, or unredacted host reports."
+  - type: dropdown
+    id: type
+    attributes:
+      label: Indicator type
+      options:
+        - SHA-256 / file hash
+        - Domain / URL
+        - File path / filename
+        - Log marker / string
+        - Registry / persistence artifact
+        - Network / named pipe
+        - Behavioral heuristic
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: indicator
+    attributes:
+      label: Indicator or sanitized observation
+      description: Defang network indicators (example[.]com) and do not publish operational secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Public source and provenance
+      description: Provide a stable public URL, publication date, or reproducible analysis method.
+    validations:
+      required: true
+  - type: input
+    id: affected
+    attributes:
+      label: Affected game / launcher / region (if established)
+  - type: dropdown
+    id: confidence
+    attributes:
+      label: Confidence
+      options:
+        - Confirmed with reproducible evidence
+        - High-confidence public reporting
+        - Contextual / needs review
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: false_positive
+    attributes:
+      label: False-positive considerations and limitations
+      description: Explain legitimate software overlap, freshness, and what the indicator does not prove.
+  - type: input
+    id: license
+    attributes:
+      label: Redistribution / licensing terms
+      description: State the source's license or that redistribution permission is unknown.
+  - type: checkboxes
+    id: safe
+    attributes:
+      label: Safety and provenance confirmation
+      options:
+        - label: I have permission to share this information and removed secrets and personal data.
+          required: true
+        - label: This submission does not contain malware binaries, exploit instructions, or private credentials.
+          required: true

@@ -10,5 +10,6 @@
 portable-release/
 **/portable-release/
 **/vendor/
+**/target/
 **/.DS_Store
 Thumbs.db

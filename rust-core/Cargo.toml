@@ -1,0 +1,21 @@
+[package]
+name = "tencent-game-audit-core"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Bounded-memory streaming primitives for Tencent Game Audit"
+
+[lib]
+name = "tencent_game_audit_core"
+path = "src/lib.rs"
+
+[dependencies]
+aho-corasick = "1.1.4"
+sha2 = "0.10.9"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "warn"
+pedantic = "warn"

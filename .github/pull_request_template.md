@@ -22,6 +22,7 @@
 - [ ] `go test -count=1 ./...`
 - [ ] `go vet ./...`
 - [ ] Windows amd64 build
+- [ ] If Rust core changed: `cargo fmt --all -- --check`, `cargo test --locked`, and `cargo clippy --locked --all-targets -- -D warnings` from `rust-core/`
 - [ ] Documentation and changelog updated where appropriate
 
 ## Additional context
