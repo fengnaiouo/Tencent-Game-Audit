@@ -32,7 +32,7 @@ import (
 var iocFS embed.FS
 
 const clsid = `{E77CC89B-7401-4C04-8CED-149DB35ADD04}`
-const version = "0.7.0"
+const version = "0.8.0"
 
 var knownHashes = map[string]string{
 	"f3e93d049851d5c19552c7d9b73c8be4580dc9d549e8f65f9f0c357c1df9d252": "K2F Sample-A.dll loader",
@@ -189,10 +189,10 @@ func deepInspectFile(path string, size, maxBytes int64, r *Report) {
 	}
 	// A bare LuaJIT magic header occurs in legitimate game resources. Treat it
 	// only as a review lead unless the K2F-specific structure also matches.
-	if len(b) >= 4 && b[0] == 0x1b && b[1] == 'L' && b[2] == 'J' && b[3] == 1 {
+	if hasLuaJITMagic(b) {
 		if bytesK2FStructure(b) {
 			addFinding(r, "CRITICAL", "K2F LuaJIT structural signature (deep scan)", path, "K2F-specific LuaJIT string-table structure; SHA256="+sha, "high")
-		} else {
+		} else if hasLuaJITDumpHeader(b) {
 			addFinding(r, "REVIEW", "LuaJIT bytecode header (deep scan)", path, "Generic LuaJIT 2.0 bytecode header only; not proof of K2F or malware; SHA256="+sha, "low; generic format marker")
 		}
 	}
@@ -209,8 +209,8 @@ func deepInspectFile(path string, size, maxBytes int64, r *Report) {
 	}
 	for _, ioc := range embeddedIOCs {
 		if ioc.Type == "bytes" && matchHexPattern(b, ioc.Value) {
-			if strings.Contains(strings.ToLower(ioc.Description), "luajit 2.0 bcdump revision 1 header") {
-				continue // The dedicated header branch above records this with the file hash.
+			if isGenericLuaJITHeaderIOC(ioc) {
+				continue // A raw byte sequence can occur inside unrelated machine code.
 			}
 			sev, confidence := "WARNING", ioc.Confidence
 			if ioc.Confidence == "high" {
@@ -578,19 +578,21 @@ func inspectFile(path string, size int64, r *Report, maxBytes int64) {
 			if len(genericHits) >= 2 && (ext == ".exe" || ext == ".dll" || ext == ".sys" || ext == ".bin") {
 				addFinding(r, "REVIEW", "Cross-game loader/remote-control heuristic", path, strings.Join(genericHits, ", "), "low; API strings alone are not proof of malicious behavior")
 			}
-			if len(b) >= 4 && b[0] == 0x1b && b[1] == 'L' && b[2] == 'J' && b[3] == 1 {
+			if hasLuaJITMagic(b) {
 				if bytesK2FStructure(b) {
 					addFinding(r, "CRITICAL", "K2F LuaJIT structural signature", path, "LuaJIT bcdump revision 1 plus K2F string-table structure", "high")
-				} else if strings.Contains(strings.ToLower(path), "tinyget") {
+				} else if hasLuaJITDumpHeader(b) && strings.Contains(strings.ToLower(path), "tinyget") {
 					addFinding(r, "WARNING", "LuaJIT payload in launcher download folder", path, "LuaJIT bytecode header 1B 4C 4A 01; preserve and investigate", "medium")
+				} else if hasLuaJITDumpHeader(b) {
+					addFinding(r, "REVIEW", "LuaJIT bytecode header", path, "Structurally plausible generic LuaJIT 2.0 dump; not proof of K2F or malware", "low; generic format marker")
 				}
 			}
 			for _, ioc := range embeddedIOCs {
 				if ioc.Type == "bytes" && matchHexPattern(b, ioc.Value) {
 					sev := "WARNING"
 					confidence := ioc.Confidence
-					if strings.Contains(strings.ToLower(ioc.Description), "luajit 2.0 bcdump revision 1 header") {
-						sev, confidence = "REVIEW", "low; generic LuaJIT header is not a malware signature"
+					if isGenericLuaJITHeaderIOC(ioc) {
+						continue // Generic LuaJIT magic is evaluated only at the file start with structure checks.
 					} else if ioc.Confidence == "high" {
 						sev = "CRITICAL"
 					}
@@ -681,21 +683,23 @@ func enrichFindingSignatures(r *Report) {
 	// Pass file paths as Base64-encoded JSON to avoid PowerShell quoting issues.
 	b, _ := json.Marshal(paths)
 	encoded := base64.StdEncoding.EncodeToString(b)
-	ps := `$ErrorActionPreference='SilentlyContinue'; $j=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('` + encoded + `')); $paths=ConvertFrom-Json $j; $res=@(foreach($p in $paths){$s=Get-AuthenticodeSignature -LiteralPath $p; [pscustomobject]@{path=$p;status=[string]$s.Status;signer=[string]$s.SignerCertificate.Subject}}); $res | ConvertTo-Json -Compress`
+	ps := `$ErrorActionPreference='SilentlyContinue'; $j=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('` + encoded + `')); $paths=ConvertFrom-Json $j; $res=@(foreach($p in $paths){$s=Get-AuthenticodeSignature -LiteralPath $p; [pscustomobject]@{path=$p;status=[string]$s.Status;status_message=[string]$s.StatusMessage;signer=[string]$s.SignerCertificate.Subject}}); $res | ConvertTo-Json -Compress`
 	out, err := exec.Command("powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", ps).Output()
 	if err != nil {
 		return
 	}
 	var results []struct {
-		Path   string `json:"path"`
-		Status string `json:"status"`
-		Signer string `json:"signer"`
+		Path          string `json:"path"`
+		Status        string `json:"status"`
+		StatusMessage string `json:"status_message"`
+		Signer        string `json:"signer"`
 	}
 	if json.Unmarshal(out, &results) != nil {
 		var one struct {
-			Path   string `json:"path"`
-			Status string `json:"status"`
-			Signer string `json:"signer"`
+			Path          string `json:"path"`
+			Status        string `json:"status"`
+			StatusMessage string `json:"status_message"`
+			Signer        string `json:"signer"`
 		}
 		if json.Unmarshal(out, &one) == nil {
 			results = append(results, one)
@@ -703,7 +707,7 @@ func enrichFindingSignatures(r *Report) {
 	}
 	byPath := map[string]struct{ status, signer string }{}
 	for _, x := range results {
-		byPath[strings.ToLower(x.Path)] = struct{ status, signer string }{x.Status, x.Signer}
+		byPath[strings.ToLower(x.Path)] = struct{ status, signer string }{normalizeAuthenticodeStatus(x.Status, x.StatusMessage), x.Signer}
 	}
 	for i := range r.Findings {
 		if x, ok := byPath[strings.ToLower(r.Findings[i].Path)]; ok {
@@ -716,6 +720,70 @@ func bytesK2FStructure(b []byte) bool {
 	// K2F raw-bundle YARA structure: bcdump header and the 1791-entry string table.
 	needle := []byte{0x01, 0xff, 0x0d, 0x00, 0x00, 0x1c, '1', 'p', 'd', '(', '-', 'H', '"', 'q', '_', 'L', 'T', '4', 'n', '`', '`', 'b', '_', 'h', '+', 'p', '<', '"', 'J'}
 	return indexBytes(b, needle) >= 0
+}
+
+// hasLuaJITDumpHeader validates a LuaJIT 2.0 dump at the beginning of a file.
+// The magic bytes alone are not sufficient: the flags and first prototype
+// length must form a plausible bounded dump header. This intentionally does
+// not search arbitrary offsets inside PE machine code.
+func hasLuaJITDumpHeader(b []byte) bool {
+	if len(b) < 6 || !hasLuaJITMagic(b) {
+		return false
+	}
+	flags := b[4]
+	if flags&0xf0 != 0 {
+		return false
+	}
+	length, n := readULEB128(b[5:])
+	return n > 0 && length > 0 && length <= uint64(len(b)-5-n)
+}
+
+func hasLuaJITMagic(b []byte) bool {
+	return len(b) >= 4 && bytes.Equal(b[:4], []byte{0x1b, 'L', 'J', 1})
+}
+
+func readULEB128(b []byte) (uint64, int) {
+	var value uint64
+	for i, c := range b {
+		if i == 10 || (i == 9 && c > 1) {
+			return 0, 0
+		}
+		value |= uint64(c&0x7f) << (7 * i)
+		if c&0x80 == 0 {
+			return value, i + 1
+		}
+	}
+	return 0, 0
+}
+
+func isGenericLuaJITHeaderIOC(ioc IOCRecord) bool {
+	return ioc.Type == "bytes" && strings.Contains(strings.ToLower(ioc.Description), "luajit 2.0 bcdump revision 1 header")
+}
+
+// normalizeAuthenticodeStatus keeps trust-chain failures distinct from
+// unsigned files and cryptographically invalid signatures.
+func normalizeAuthenticodeStatus(status, statusMessage string) string {
+	s := strings.ToLower(strings.TrimSpace(status))
+	m := strings.ToLower(strings.TrimSpace(statusMessage))
+	if s == "valid" {
+		return "Valid"
+	}
+	if s == "notsigned" {
+		return "NotSigned"
+	}
+	if strings.Contains(m, "root certificate is not trusted") || strings.Contains(m, "terminated in a root certificate") || strings.Contains(m, "untrusted root") {
+		return "UntrustedRoot"
+	}
+	switch s {
+	case "hashmismatch", "nottrusted", "invalidsignature", "malformed":
+		return "InvalidSignature"
+	case "notsupportedfileformat", "incompatible":
+		return "NotSupported"
+	case "unknownerror", "":
+		return "UnknownError"
+	default:
+		return "UnknownError"
+	}
 }
 func indexBytes(b, n []byte) int {
 	for i := 0; i+len(n) <= len(b); i++ {

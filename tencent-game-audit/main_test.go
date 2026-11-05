@@ -270,6 +270,55 @@ func TestDeepInspectTreatsGenericLuaJITHeaderAsReviewOnly(t *testing.T) {
 	}
 }
 
+func TestInspectFileDoesNotTreatPEInstructionDisplacementAsLuaJIT(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "launcher.exe")
+	// The LuaJIT-looking bytes are the RIP-relative displacement of an x64 LEA.
+	content := []byte{0x4c, 0x8d, 0x0d, 0x1b, 0x4c, 0x4a, 0x01, 0xe9, 0x20, 0x01, 0x00, 0x00}
+	if err := os.WriteFile(path, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := &Report{}
+	inspectFile(path, int64(len(content)), r, 1024)
+	for _, finding := range r.Findings {
+		if strings.Contains(strings.ToLower(finding.Category), "luajit") || strings.Contains(strings.ToLower(finding.Category), "k2f byte signature") {
+			t.Fatalf("instruction displacement must not be reported as LuaJIT: %+v", finding)
+		}
+	}
+}
+
+func TestLuaJITDumpHeaderRequiresPlausibleStructure(t *testing.T) {
+	valid := []byte{0x1b, 'L', 'J', 1, 0x00, 0x03, 0xaa, 0xbb, 0xcc}
+	if !hasLuaJITDumpHeader(valid) {
+		t.Fatal("expected structurally plausible LuaJIT dump header")
+	}
+	for _, malformed := range [][]byte{
+		{0x1b, 'L', 'J', 1, 0xf0, 0x01, 0xaa},      // reserved flags
+		{0x1b, 'L', 'J', 1, 0x00, 0x00, 0xaa},      // zero prototype length
+		{0x1b, 'L', 'J', 1, 0x00, 0x7f, 0xaa},      // declared length exceeds input
+		{0x4c, 0x8d, 0x0d, 0x1b, 0x4c, 0x4a, 0x01}, // embedded magic-like bytes
+	} {
+		if hasLuaJITDumpHeader(malformed) {
+			t.Errorf("malformed/non-leading header accepted: %x", malformed)
+		}
+	}
+}
+
+func TestNormalizeAuthenticodeStatusSeparatesTrustAndIntegrity(t *testing.T) {
+	tests := []struct{ status, message, want string }{
+		{"Valid", "Signature verified", "Valid"},
+		{"NotSigned", "No signature found", "NotSigned"},
+		{"UnknownError", "A certificate chain processed, but terminated in a root certificate which is not trusted by the trust provider", "UntrustedRoot"},
+		{"NotTrusted", "The certificate chain includes an untrusted root", "UntrustedRoot"},
+		{"HashMismatch", "The file hash does not match", "InvalidSignature"},
+		{"UnknownError", "The revocation server was offline", "UnknownError"},
+	}
+	for _, tt := range tests {
+		if got := normalizeAuthenticodeStatus(tt.status, tt.message); got != tt.want {
+			t.Errorf("normalizeAuthenticodeStatus(%q, %q) = %q, want %q", tt.status, tt.message, got, tt.want)
+		}
+	}
+}
+
 func TestDeepInspectDetectsK2FStructureInArbitraryExtension(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "opaque.resource")
 	content := []byte{0x1b, 'L', 'J', 1, 0x01, 0xff, 0x0d, 0, 0, 0x1c, '1', 'p', 'd', '(', '-', 'H', '"', 'q', '_', 'L', 'T', '4', 'n', '`', '`', 'b', '_', 'h', '+', 'p', '<', '"', 'J'}

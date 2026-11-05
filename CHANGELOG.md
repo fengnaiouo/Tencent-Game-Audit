@@ -2,6 +2,16 @@
 
 All notable changes to Tencent Game Audit are documented here.
 
+## [0.8.0] - 2026-11-05
+
+### Fixed
+- Removed raw-offset matching of the generic LuaJIT `1B 4C 4A 01` marker, which could match coincidental bytes inside PE instructions such as x64 RIP-relative displacements.
+- Generic LuaJIT findings now require a file-leading dump marker, valid flag bits, and a bounded non-zero first-prototype length. K2F-specific structure remains independently checked at the file-leading LuaJIT marker.
+- Authenticode enrichment now distinguishes `Valid`, `NotSigned`, `UntrustedRoot`, `InvalidSignature`, `NotSupported`, and `UnknownError`; an untrusted certificate root is no longer conflated with a cryptographically invalid signature.
+
+### Tests
+- Added a regression fixture for the Epic Launcher-style x64 `LEA` displacement false positive, malformed LuaJIT dump headers, and Authenticode trust/integrity status mapping.
+
 ## [0.7.0] - 2026-11-05
 
 ### Fixed
