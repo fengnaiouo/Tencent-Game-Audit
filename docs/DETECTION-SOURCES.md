@@ -32,6 +32,22 @@ This document records defensive techniques reviewed for Tencent Game Audit. The 
 - Current network connections are point-in-time observations. Historical DNS cache or hosts entries do not prove a live session.
 - Public incident reporting indicates the agent had remote command execution and broad data collection capability. A confirmed agent execution should be handled as a serious host compromise, not merely a suspicious game file.
 
+## Cross-game NIKKE incident hunting
+
+- The project conversation records additional user-supplied incident details: four reportedly modified Level Infinite launcher JavaScript assets (`aegis-fix.min.js`, `vue-bucket.min.js`, `images.7fec4c32.js`, `FeedList.feb647c9.js`); conditional delivery through `insightjs.com`; a payload reportedly disguised below `Launcher/log/tinyget/`; `k2f_chan` and related launcher debug-log markers; and a second-stage browser persistence mechanism reportedly present on only a subset of hosts. These details are retained as leads and are not independently re-proven by this entry.
+- NIKKE-specific names, hashes, domains, log markers, CLSID, and payload structures must remain scoped to the documented incident unless independent evidence supports reuse in another title.
+- For other Tencent-operated/published/affiliated games, hunt for the same *techniques* independently: unexpected launcher web-asset changes or external script loads, suspicious service/launcher logs, transient payload artifacts, browser persistence, and correlated process/registry/network timelines.
+- Prioritize games that demonstrably share a launcher, CDN, embedded browser runtime, service, or code lineage. Corporate ownership/investment alone is not evidence of a shared attack surface or compromise.
+- See [NIKKE-K2F-CROSS-GAME-HUNTING.md](NIKKE-K2F-CROSS-GAME-HUNTING.md) for the recorded incident details, evidence boundaries, planned detection work, and handling constraints.
+
+## Log Forensics implementation (v0.6.0)
+
+- The scanner performs bounded, read-only discovery of `.log`, rotated `.log.*`, and selected debug/service/crash `.txt` files under selected game and launcher roots. It does not assume that NIKKE paths exist in every regional launcher build.
+- NIKKE-specific rules are `NIKKE-K2F-LOG-001` through `NIKKE-K2F-LOG-012`. Exact `k2f_chan registered` and `lua downloaded to log\\tinyget` markers are treated as high-confidence incident-specific evidence; `k2f_chan` alone and launcher asset names are `REVIEW` only.
+- `GENERIC-LOG-*` rules are low-confidence process/loader technique references. Their presence in logs is not proof of injection or compromise and must be correlated with process, file, registry, and network evidence.
+- Each parsed finding retains rule ID, line number, bounded nearby context, timestamp text when present, and the source log SHA-256. Secret-like values are redacted from context. Original logs are not changed or transmitted.
+- Text analysis is limited to 16 MiB per file and 20,000 candidate logs globally. UTF-8 and UTF-16 BOMs are supported. Compressed/oversized/unreadable logs are explicit coverage limitations. Binary files with log-like names receive bounded hash and selected static signature checks but are not rendered as text or executed.
+
 ## Handling and legal notes
 
 All checks are read-only. Do not execute samples, contact C2 infrastructure, upload private scan reports, or collect another user's private files. Keep secrets and personal data out of issues and pull requests. Follow the source projects' licenses before redistributing their code or rule content; this project currently references their public research and independently implements the detection logic.

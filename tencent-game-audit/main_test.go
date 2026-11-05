@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"unicode/utf16"
 )
 
 func TestClassifySeparatesNikkeFromOtherTitles(t *testing.T) {
@@ -224,6 +225,191 @@ func TestDeepInspectDetectsK2FStructureInArbitraryExtension(t *testing.T) {
 	}
 }
 
+func TestLogForensicsFindsNIKKEMarkersAndRedactsSecrets(t *testing.T) {
+	root := t.TempDir()
+	logDir := filepath.Join(root, "Launcher", "intl_service")
+	if err := os.MkdirAll(logDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(logDir, "debug.log")
+	content := "2026-11-05 10:11:12 launcher ready\n2026-11-05 10:11:13 token=do-not-leak user action\n2026-11-05 10:11:14 k2f_chan registered\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := &Report{}
+	scanLogFiles([]string{root}, r)
+	if r.LogFilesScanned != 1 {
+		t.Fatalf("analyzed %d log files, want 1", r.LogFilesScanned)
+	}
+	var hit *Finding
+	for i := range r.Findings {
+		if r.Findings[i].Category == "NIKKE/K2F launcher execution marker" {
+			hit = &r.Findings[i]
+		}
+	}
+	if hit == nil || hit.Severity != "CRITICAL" || hit.Confidence == "" {
+		t.Fatalf("expected exact launcher execution marker finding, got %+v", r.Findings)
+	}
+	if !strings.Contains(hit.Evidence, "line=3") || !strings.Contains(hit.Evidence, "2026-11-05 10:11:14") || !strings.Contains(hit.Evidence, "SHA256=") {
+		t.Fatalf("finding omitted line, timestamp, or hash evidence: %+v", hit)
+	}
+	if strings.Contains(hit.Evidence, "do-not-leak") || !strings.Contains(hit.Evidence, "[REDACTED]") {
+		t.Fatalf("log context leaked a token or failed to redact it: %s", hit.Evidence)
+	}
+}
+
+func TestLogForensicsBareK2FChannelIsReviewOnly(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "debug.log")
+	if err := os.WriteFile(path, []byte("2026-11-05T10:00:00Z channel initialized: k2f_chan\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := &Report{}
+	scanLogFiles([]string{root}, r)
+	if len(r.Findings) != 1 || r.Findings[0].Severity != "REVIEW" {
+		t.Fatalf("an isolated channel string must remain REVIEW, got %+v", r.Findings)
+	}
+}
+
+func TestLogForensicsBenignLogAndRotatedLog(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "debug.log"), []byte("launcher started normally\nnews panel ready\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "debug.log.1"), []byte("agent started as worker\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := &Report{}
+	scanLogFiles([]string{root}, r)
+	if r.LogFilesScanned != 2 {
+		t.Fatalf("expected current and rotated logs to be analyzed, got %d", r.LogFilesScanned)
+	}
+	if len(r.Findings) != 1 || r.Findings[0].Severity != "REVIEW" {
+		t.Fatalf("benign log should be quiet and generic agent text low confidence, got %+v", r.Findings)
+	}
+}
+
+func TestDecodeLogTextUTF16LE(t *testing.T) {
+	text := "2026-11-05 10:11:12 k2f_chan registered"
+	encoded := utf16.Encode([]rune(text))
+	data := []byte{0xff, 0xfe}
+	for _, word := range encoded {
+		data = append(data, byte(word), byte(word>>8))
+	}
+	decoded, ok := decodeLogText(data)
+	if !ok || decoded != text {
+		t.Fatalf("UTF-16LE decode = %q, %v; want %q", decoded, ok, text)
+	}
+}
+
+func TestRedactLogSecretsHandlesJSONAndQueryTokens(t *testing.T) {
+	line := `{"access_token":"json-secret-value","OPENAI_API_KEY":"key-secret-value"} Authorization: Bearer bearer-secret-value https://example.invalid/?token=query-secret-value`
+	got := redactLogSecrets(line)
+	for _, secret := range []string{"json-secret-value", "key-secret-value", "bearer-secret-value", "query-secret-value"} {
+		if strings.Contains(got, secret) {
+			t.Errorf("redaction leaked %q in %q", secret, got)
+		}
+	}
+	if strings.Count(got, "[REDACTED]") < 4 {
+		t.Errorf("expected JSON and query secrets to be redacted, got %q", got)
+	}
+}
+
+func TestLogContextRedactsPrivateKeyBlockLines(t *testing.T) {
+	lines := []string{"before", "-----BEGIN PRIVATE KEY-----", "base64-private-key-material", "-----END PRIVATE KEY-----", "after"}
+	evidence := formatLogEvidence(logRule{id: "TEST", marker: "before"}, 0, lines, "hash")
+	if strings.Contains(evidence, "base64-private-key-material") || strings.Contains(evidence, "BEGIN PRIVATE KEY") {
+		t.Fatalf("private key block leaked in context: %s", evidence)
+	}
+}
+
+func TestLogForensicsBinaryCandidateIsNotRendered(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "tinyget.log")
+	if err := os.WriteFile(path, []byte{'M', 'Z', 0, 0, 'k', '2', 'f', '_', 'c', 'h', 'a', 'n'}, 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := &Report{}
+	scanLogFiles([]string{root}, r)
+	if r.LogFilesScanned != 1 {
+		t.Fatalf("expected one binary log candidate to be inspected, got %+v", r)
+	}
+	foundBinary, foundMZ := false, false
+	for _, finding := range r.Findings {
+		foundBinary = foundBinary || finding.Category == "Non-text log candidate"
+		foundMZ = foundMZ || finding.Category == "Executable header in log-named file"
+	}
+	if !foundBinary || !foundMZ {
+		t.Fatalf("binary payload disguised as log should be classified as non-text, got %+v", r)
+	}
+}
+
+func TestLogForensicsDetectsForwardSlashTinygetMarker(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "debug.log")
+	if err := os.WriteFile(path, []byte("lua downloaded to log/tinyget\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := &Report{}
+	scanLogFiles([]string{root}, r)
+	if len(r.Findings) != 1 || r.Findings[0].Category != "NIKKE/K2F launcher payload-download marker" || r.Findings[0].Severity != "CRITICAL" {
+		t.Fatalf("forward-slash tinyget marker was not recognized: %+v", r.Findings)
+	}
+}
+
+func TestLogForensicsDetectsK2FPayloadDisguisedAsLog(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "payload.log")
+	content := []byte{0x1b, 'L', 'J', 1, 0x01, 0xff, 0x0d, 0, 0, 0x1c, '1', 'p', 'd', '(', '-', 'H', '"', 'q', '_', 'L', 'T', '4', 'n', '`', '`', 'b', '_', 'h', '+', 'p', '<', '"', 'J'}
+	if err := os.WriteFile(path, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := &Report{}
+	inspectLogFile(path, int64(len(content)), r)
+	found := false
+	for _, finding := range r.Findings {
+		if finding.Category == "K2F LuaJIT payload disguised as log" && finding.Severity == "CRITICAL" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("K2F payload in a log-named file was not identified: %+v", r.Findings)
+	}
+}
+
+func TestLogForensicsReportsOversizedLogAsLimitation(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "debug.log")
+	if err := os.WriteFile(path, make([]byte, maxLogFileBytes+1), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := &Report{}
+	scanLogFiles([]string{root}, r)
+	if r.LogFilesScanned != 0 || r.SkippedFiles != 1 || len(r.Findings) != 1 || r.Findings[0].Category != "Log file size limit" {
+		t.Fatalf("oversized log should be an explicit scan limitation, got %+v", r)
+	}
+}
+
+func TestK2FStringSeverityAvoidsBareMarkerEscalation(t *testing.T) {
+	if severity, _ := k2fStringSeverity([]string{"k2f_chan"}); severity != "REVIEW" {
+		t.Fatalf("bare k2f_chan severity = %s, want REVIEW", severity)
+	}
+	if severity, _ := k2fStringSeverity([]string{"k2f_chan registered"}); severity != "CRITICAL" {
+		t.Fatalf("exact registration marker severity = %s, want CRITICAL", severity)
+	}
+}
+
+func TestIndependentIOCRecordsDoNotCountNestedStringsTwice(t *testing.T) {
+	got := independentIOCRecords([]IOCRecord{
+		{Type: "string", Value: "k2f_chan", Confidence: "high"},
+		{Type: "string", Value: "k2f_chan registered", Confidence: "high"},
+		{Type: "string", Value: "analytics.insightjs.com", Confidence: "high"},
+	})
+	if len(got) != 2 || got[0].Value != "k2f_chan registered" || got[1].Value != "analytics.insightjs.com" {
+		t.Fatalf("nested IOC strings should not count as independent evidence: %+v", got)
+	}
+}
+
 func TestUnique(t *testing.T) {
 	x := unique([]string{".", ".", ""})
 	if len(x) != 1 {
@@ -414,8 +600,8 @@ func TestLoadedK2FPersistenceModuleIsCritical(t *testing.T) {
 
 func TestWriteReportFormatsAndEscaping(t *testing.T) {
 	report := &Report{
-		Version: "0.2.0", Generated: "2026-11-05T12:00:00+08:00", Language: "zh-Hant", Mode: "read-only",
-		Computer: "測試主機", User: "測試使用者", ScannedFiles: 2, SkippedFiles: 1,
+		Version: "0.6.0", Generated: "2026-11-05T12:00:00+08:00", Language: "zh-Hant", Mode: "read-only",
+		Computer: "測試主機", User: "測試使用者", ScannedFiles: 2, SkippedFiles: 1, LogFilesScanned: 3,
 		Games:       []Game{{Title: "測試遊戲", InstallPath: "C:\\Games\\測試", Source: "fixture", Relation: "unclassified"}},
 		Findings:    []Finding{{Severity: "REVIEW", Category: "HTML injection", Path: "=HYPERLINK(\"https://invalid\")", Evidence: "</td><script>alert(1)</script> | 證據", Confidence: "low", Signer: "Example & Co"}},
 		Limitations: []string{"無法讀取的項目不代表安全"},
@@ -442,6 +628,9 @@ func TestWriteReportFormatsAndEscaping(t *testing.T) {
 				if err := json.Unmarshal(data, &decoded); err != nil || len(decoded.Findings) != 1 {
 					t.Fatalf("invalid JSON report: %v", err)
 				}
+				if decoded.LogFilesScanned != 3 {
+					t.Fatalf("JSON report lost log count: %d", decoded.LogFilesScanned)
+				}
 			}
 			if format == "html" {
 				if strings.Contains(string(data), "<script>alert(1)</script>") || !strings.Contains(string(data), "&lt;script&gt;") {
@@ -456,6 +645,15 @@ func TestWriteReportFormatsAndEscaping(t *testing.T) {
 				if len(rows) != 5 || rows[4][14] != "'=HYPERLINK(\"https://invalid\")" {
 					t.Fatalf("CSV formula neutralization failed: %#v", rows)
 				}
+				if rows[0][19] != "log_files_scanned" || rows[1][19] != "3" {
+					t.Fatalf("CSV report lost log count: %#v", rows[:2])
+				}
+			}
+			if (format == "txt" || format == "md") && !strings.Contains(string(data), "Log files analyzed: 3") {
+				t.Fatalf("%s report omitted analyzed log count", format)
+			}
+			if format == "html" && !strings.Contains(string(data), "Logs analyzed: 3") {
+				t.Fatal("HTML report omitted analyzed log count")
 			}
 			if format == "md" && (!strings.Contains(string(data), "測試遊戲") || !strings.Contains(string(data), "\\|")) {
 				t.Fatal("Markdown report lost Unicode or failed to escape table delimiters")

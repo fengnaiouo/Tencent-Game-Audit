@@ -32,7 +32,7 @@ import (
 var iocFS embed.FS
 
 const clsid = `{E77CC89B-7401-4C04-8CED-149DB35ADD04}`
-const version = "0.4.0"
+const version = "0.6.0"
 
 var knownHashes = map[string]string{
 	"f3e93d049851d5c19552c7d9b73c8be4580dc9d549e8f65f9f0c357c1df9d252": "K2F Sample-A.dll loader",
@@ -112,27 +112,29 @@ type Game struct {
 	Relation    string `json:"relation"`
 }
 type Report struct {
-	Version      string         `json:"scanner_version"`
-	Generated    string         `json:"generated"`
-	Language     string         `json:"language"`
-	Computer     string         `json:"computer"`
-	User         string         `json:"user"`
-	Mode         string         `json:"mode"`
-	ScannedFiles int            `json:"scanned_files"`
-	SkippedFiles int            `json:"skipped_files"`
-	Games        []Game         `json:"game_inventory"`
-	Findings     []Finding      `json:"findings"`
-	System       SystemSnapshot `json:"system_snapshot"`
-	Limitations  []string       `json:"limitations"`
+	Version         string         `json:"scanner_version"`
+	Generated       string         `json:"generated"`
+	Language        string         `json:"language"`
+	Computer        string         `json:"computer"`
+	User            string         `json:"user"`
+	Mode            string         `json:"mode"`
+	ScannedFiles    int            `json:"scanned_files"`
+	SkippedFiles    int            `json:"skipped_files"`
+	LogFilesScanned int            `json:"log_files_scanned"`
+	Games           []Game         `json:"game_inventory"`
+	Findings        []Finding      `json:"findings"`
+	System          SystemSnapshot `json:"system_snapshot"`
+	Limitations     []string       `json:"limitations"`
 }
 
 type config struct {
-	full       bool
-	deep       bool
-	maxFiles   int
-	maxPerRoot int
-	maxBytes   int64
-	roots      []string
+	full         bool
+	deep         bool
+	logForensics bool
+	maxFiles     int
+	maxPerRoot   int
+	maxBytes     int64
+	roots        []string
 }
 
 // deepInspectFile performs bounded, read-only content analysis on arbitrary
@@ -173,10 +175,7 @@ func deepInspectFile(path string, size, maxBytes int64, r *Report) {
 		}
 	}
 	if len(hits) > 0 {
-		sev, confidence := "WARNING", "medium"
-		if containsAny(hits, "k2f_chan registered", "k2f.agent.state", "the evaluated bundle is not on disk", "analytics.insightjs.com") {
-			sev, confidence = "CRITICAL", "high"
-		}
+		sev, confidence := k2fStringSeverity(hits)
 		addFinding(r, sev, "K2F content indicators (deep scan)", path, strings.Join(hits, ", ")+"; SHA256="+sha, confidence)
 	}
 	for _, ioc := range embeddedIOCs {
@@ -200,6 +199,16 @@ func addFinding(r *Report, sev, cat, path, ev, conf string) {
 		}
 	}
 	r.Findings = append(r.Findings, Finding{Severity: sev, Category: cat, Path: path, Evidence: ev, Confidence: conf})
+}
+
+func k2fStringSeverity(hits []string) (string, string) {
+	if containsAny(hits, "k2f_chan registered", "lua downloaded to log\\tinyget") {
+		return "CRITICAL", "high; exact incident-specific execution/download marker"
+	}
+	if containsAny(hits, "k2f.agent.state", "the evaluated bundle is not on disk", "analytics.insightjs.com", "insightjs.com/l.js", "insightjs.org/l.js") {
+		return "WARNING", "high; incident-specific indicator requiring corroboration"
+	}
+	return "REVIEW", "low; isolated string or generic message is not proof of execution"
 }
 
 func runReg(args ...string) string {
@@ -504,6 +513,7 @@ func inspectFile(path string, size int64, r *Report, maxBytes int64) {
 					iocHits = append(iocHits, ioc)
 				}
 			}
+			iocHits = independentIOCRecords(iocHits)
 			if len(iocHits) >= 2 {
 				labels := []string{}
 				high := 0
@@ -520,10 +530,7 @@ func inspectFile(path string, size int64, r *Report, maxBytes int64) {
 				addFinding(r, sev, "Embedded K2F IOC string cluster", path, strings.Join(labels, ", "), conf)
 			}
 			if len(hits) > 0 {
-				sev, conf := "WARNING", "medium"
-				if containsAny(hits, "k2f_chan registered", "k2f_chan", "k2f.agent.state", "the evaluated bundle is not on disk", "analytics.insightjs.com") {
-					sev, conf = "CRITICAL", "high"
-				}
+				sev, conf := k2fStringSeverity(hits)
 				addFinding(r, sev, "K2F string indicators", path, strings.Join(hits, ", "), conf)
 			}
 			if strings.EqualFold(name, "transportsecurity") {
@@ -578,6 +585,30 @@ func inspectFile(path string, size int64, r *Report, maxBytes int64) {
 			addFinding(r, "CRITICAL", "Browser K2F persistence DLL path", path, evidence, "high")
 		}
 	}
+}
+
+// independentIOCRecords removes a shorter IOC when it is wholly contained in
+// a more specific matched IOC. Nested markers such as "k2f_chan" and
+// "k2f_chan registered" are one piece of evidence, not an independent cluster.
+func independentIOCRecords(records []IOCRecord) []IOCRecord {
+	out := make([]IOCRecord, 0, len(records))
+	for i, candidate := range records {
+		value := strings.ToLower(candidate.Value)
+		nested := false
+		for j, other := range records {
+			if i == j || len(other.Value) <= len(candidate.Value) {
+				continue
+			}
+			if strings.Contains(strings.ToLower(other.Value), value) {
+				nested = true
+				break
+			}
+		}
+		if !nested {
+			out = append(out, candidate)
+		}
+	}
+	return out
 }
 
 func isKnownNetworkIOCIP(ip string) bool {
@@ -998,6 +1029,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "Print scanner version and exit")
 	full := flag.Bool("full", false, "Raise scan budget; still skips Windows/system trees")
 	deep := flag.Bool("deep", false, "Deep read-only content analysis of every file in selected roots; hashes files and inspects embedded indicators")
+	noLogs := flag.Bool("no-logs", false, "Disable enhanced log discovery/context analysis; general file IOC scanning remains enabled")
 	systemOnly := flag.Bool("system-only", false, "Collect Windows persistence/process/network snapshot without walking game files")
 	rootOnly := flag.Bool("root-only", false, "Scan only folders supplied with -root; skip automatic game/browser discovery")
 	jsonPath := flag.String("json", "", "Write a JSON report to this path (default: timestamped report beside executable)")
@@ -1033,10 +1065,13 @@ func main() {
 		limit = 1000000
 		perRootLimit = 250000
 	}
-	cfg := config{full: *full, deep: *deep, maxFiles: limit, maxPerRoot: perRootLimit, maxBytes: 512 << 20, roots: extra}
+	cfg := config{full: *full, deep: *deep, logForensics: !*noLogs, maxFiles: limit, maxPerRoot: perRootLimit, maxBytes: 512 << 20, roots: extra}
 	mode := "read-only"
 	if *deep {
 		mode = "read-only deep content analysis"
+	}
+	if !*noLogs {
+		mode += " + log forensics"
 	}
 	if *systemOnly {
 		mode = "read-only system snapshot"
@@ -1074,6 +1109,9 @@ func main() {
 	}
 	if !*systemOnly {
 		scanRoots(scan, cfg, r)
+		if cfg.logForensics {
+			scanLogFiles(scan, r)
+		}
 	}
 	r.System = collectWindowsSnapshot()
 	r.System.addFindings(r)
@@ -1122,6 +1160,7 @@ func main() {
 		label = []string{"Tencent Game Security Audit (READ ONLY)", "Files scanned", "skipped", "Game/path candidates", "Findings", "Report"}
 	}
 	fmt.Printf("%s\n%s: %d | %s: %d\n%s: %d\n%s: %d\n", label[0], label[1], r.ScannedFiles, label[2], r.SkippedFiles, label[3], len(r.Games), label[4], len(r.Findings))
+	fmt.Printf("Log files analyzed: %d\n", r.LogFilesScanned)
 	for _, f := range r.Findings {
 		fmt.Printf("[%s] %s | %s | %s\n", f.Severity, f.Category, f.Path, f.Evidence)
 	}

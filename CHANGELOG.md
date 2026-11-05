@@ -2,6 +2,20 @@
 
 All notable changes to Tencent Game Audit are documented here.
 
+## [0.6.0] - 2026-11-05
+
+### Added
+- Read-only Log Forensics discovers current and rotated text logs under selected game/launcher roots, including NIKKE `Launcher/intl_service/debug.log` and `Launcher/log/tinyget/` locations when present.
+- NIKKE/K2F incident-specific log rules for `k2f_chan registered`, `lua downloaded to log\\tinyget`, `k2f.agent.state`, and reported `insightjs.com` infrastructure references; generic process/injection-related log strings remain low-confidence review leads.
+- Log evidence includes rule IDs, line numbers, nearby bounded context, timestamp text, and SHA-256. Passwords, tokens, cookies, API keys, and bearer values are redacted from retained context.
+- Static checks identify known payload hashes, LuaJIT/K2F structures, and MZ executable headers in files disguised with log-style names without executing them.
+- Reports now include the number of analyzed log files; `-no-logs` disables the dedicated context-analysis pass while general file IOC scanning remains active.
+- Recorded the NIKKE / K2F launcher and browser-persistence incident leads and a cross-game threat-hunting plan, with strict IOC provenance boundaries.
+
+### Changed
+- A bare `k2f_chan` string is now a `REVIEW` lead rather than an automatic `CRITICAL`; exact incident-specific execution/download markers retain higher severity.
+- Existing NIKKE indicators remain scoped to that incident; generic cross-game log rules do not imply compromise of other Tencent titles.
+
 ## [0.4.0] - 2026-11-05
 
 ### Added

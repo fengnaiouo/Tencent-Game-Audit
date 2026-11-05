@@ -16,3 +16,4 @@ Portable Windows x64 scanner. No Go/Rust/Python installation or network access i
 Read-only operation: the tool does not delete, quarantine, terminate processes, or modify Windows security settings. CRITICAL means a high-confidence documented indicator matched; REVIEW findings need human validation. No-hit does not prove a device is clean.
 
 Reports may contain usernames, computer names, file paths and process command lines. Review and redact before sharing.
+Log Forensics is enabled by default for selected game and launcher roots. It searches current and rotated text logs, redacts common secret values in evidence context, and records rule IDs, line numbers, timestamps when present, and SHA-256. Use `-no-logs` to disable this dedicated context-analysis pass; general file IOC scanning remains enabled. Binary files disguised with log-style names are not executed or rendered as text; only bounded static signatures and hashes are checked.

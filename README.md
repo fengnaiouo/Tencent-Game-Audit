@@ -79,6 +79,15 @@ The scanner is read-only: it does not delete, quarantine, repair, terminate proc
 - `REVIEW`: heuristic or contextual evidence requiring analyst validation.
 - `INFO`: inventory, scan limits, or informational observations.
 
+### Log Forensics
+
+- Enhanced Log Forensics is enabled by default for selected game/launcher roots. It inspects `.log`, rotated `.log.*`, and selected debug/service/crash text logs; `-no-logs` disables this dedicated context-analysis pass, while normal file IOC scanning remains active.
+- The NIKKE profile includes the reported `Launcher/intl_service/debug.log` and `Launcher/log/tinyget/` locations through recursive discovery. Paths are not assumed to exist in every region or launcher version.
+- Exact `k2f_chan registered` and `lua downloaded to log\\tinyget` markers are high-confidence incident-specific evidence. A bare `k2f_chan`, asset filename, or generic process API string is only a review lead.
+- Log parsing is bounded to 16 MiB per file and 20,000 candidate logs globally. Current/rotated text logs support UTF-8 and UTF-16 BOMs; compressed logs and binary payloads are not parsed as text. Binary log-named files still receive bounded hash and selected static signature checks.
+- Evidence contains line number, nearby context, timestamp text when present, SHA-256, and rule ID. Secret-like values in context are redacted. The original log is never modified or uploaded.
+- A deleted or conditionally delivered payload may leave no surviving log or file. A no-hit result cannot establish that an event did not occur.
+
 ## Build from source
 
 ```powershell
@@ -93,6 +102,7 @@ The script runs uncached Go tests, `go vet`, builds Windows amd64 with CGO disab
 - `tencent-game-audit/`: Go source, tests, embedded IOC CSV, and portable build script.
 - `docs/`: detection source provenance and technical notes.
 - `docs/PROJECT-SESSION-LOG.md`: append-only project conversation summaries, tool activity, and validation history (not a verbatim account-wide transcript).
+- `docs/NIKKE-K2F-CROSS-GAME-HUNTING.md`: NIKKE / K2F incident leads, evidence boundaries, and the defensive investigation plan for other Tencent game launchers.
 - `README.md`: project overview and quick start.
 
 ## Contributing and responsible disclosure

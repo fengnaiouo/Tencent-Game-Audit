@@ -20,6 +20,8 @@
 .\Tencent-Game-Audit.exe -system-only
 .\Tencent-Game-Audit.exe -full
 .\Tencent-Game-Audit.exe -deep -root-only -root "D:\Games" -format html -out "$env:TEMP\Tencent-Game-Audit-deep.html"
+.\Tencent-Game-Audit.exe -root-only -root "D:\Games" -format json -out "$env:TEMP\Tencent-Game-Audit-logs.json"
+.\Tencent-Game-Audit.exe -no-logs -root-only -root "D:\Games"
 .\Tencent-Game-Audit.exe -json "$env:TEMP\Tencent-Game-Audit.json"
 .\Tencent-Game-Audit.exe -format html -out "$env:TEMP\Tencent-Game-Audit.html"
 .\Tencent-Game-Audit.exe -format csv -out "$env:TEMP\Tencent-Game-Audit.csv"
@@ -36,6 +38,14 @@ Supported report formats are `json` (default), `txt`, `html`, `csv`, and `md`. U
 - 建議先用 `-root-only -root "D:\\Delta Force" -deep` 限定單一遊戲目錄，再逐一掃描其他遊戲庫。深度模式上限為每個根目錄 250,000 個檔案、總計 1,000,000 個檔案；單檔分析上限 512 MiB，超限／讀取失敗會列入報告。
 - 通用 LuaJIT `1B 4C 4A 01` 只會列為低信心 `REVIEW`；只有額外命中 K2F 專屬結構或其他獨立 IOC，才會提高嚴重度。LuaJIT 標頭本身不是惡意程式證據。
 - 深度模式仍不會解密或解壓未知封裝、Chromium LevelDB 壓縮紀錄，也不是反編譯器或沙箱；必要時應以可信來源樣本比對 SHA-256，並使用隔離環境中的專業鑑識工具。
+
+### Log Forensics（v0.6.0）
+
+- 進階 Log 鑑識預設啟用，會在選定的遊戲／Launcher 根目錄尋找 `.log`、輪替 `.log.*`，以及特定 debug/service/crash `.txt` 紀錄。`-no-logs` 只停用這個上下文分析流程；一般檔案 IOC 掃描仍會檢查支援的 Log 內容。
+- NIKKE 會特別涵蓋 `Launcher/intl_service/debug.log` 與 `Launcher/log/tinyget/`（透過遞迴發現，不假設每個地區版本都有這些路徑）。
+- `k2f_chan registered`、`lua downloaded to log\\tinyget` 是事件專屬強指標；單獨 `k2f_chan`、資產檔名或通用程序 API 只列為 REVIEW，不直接判定感染。
+- 每個 Log 最多分析 16 MiB，全域最多 20,000 個候選檔案；支援 UTF-8 與含 BOM 的 UTF-16。壓縮 Log 不會解壓；二進制偽裝 Log 不會當文字解析，但會做有限的 SHA-256、MZ 與 LuaJIT/K2F 靜態檢查。
+- 證據包含規則 ID、行號、有限前後文、可取得的時間戳記與 SHA-256。密碼、Token、Cookie、API Key、Bearer 值會在輸出上下文中遮蔽。原始 Log 不會被修改或上傳。
 
 ## 安全與判讀
 
