@@ -120,6 +120,59 @@ This is an append-only project activity log for the `Tencent-Game-Audit` reposit
 
 _Append dated results here. Do not rewrite earlier entries; correct mistakes with a new dated note._
 
+### 2026-11-05 — v0.6.0 Log Forensics implementation
+
+**User request:** “將這板隔離並製作0.6.0” (isolate this work on a separate branch and build v0.6.0).
+
+**Branch isolation:**
+- Created `feat/v0.6.0-log-forensics` from the verified local `main` at `027943b`.
+- Carried forward the pending NIKKE/K2F incident documentation changes on this feature branch. Existing unrelated untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain un-staged and untouched.
+
+**Implementation:**
+- Added `tencent-game-audit/log_forensics.go` for bounded, read-only discovery of current and rotated logs, UTF-8/UTF-16 BOM decoding, timestamp/line/context evidence, SHA-256, and secret redaction.
+- Added NIKKE-specific markers for `k2f_chan registered`, `lua downloaded to log\\tinyget`, `k2f.agent.state`, `insightjs.com` references, launcher asset names, and generic low-confidence process/loader technique references.
+- Added static handling for MZ/LuaJIT/K2F signatures and known hashes in log-named binary payloads without executing or rendering binary content as text.
+- Integrated default Log Forensics with `-no-logs` opt-out and added `log_files_scanned` to reports.
+- Downgraded isolated `k2f_chan` from automatic CRITICAL to REVIEW; exact incident-specific markers retain stronger severity.
+- Added synthetic tests for marker detection, redaction (including JSON/API/bearer/query secrets and private-key blocks), line/time/hash evidence, benign and rotated logs, UTF-16, binary disguised logs, K2F payloads with `.log` names, size limits, and severity boundaries.
+
+**Validation:**
+- An initial test run found a CSV row-width mismatch after adding the log count field; corrected the system-snapshot row and reran the complete suite.
+- `rtk go test -count=1 ./...`: 53 tests passed.
+- `rtk go vet ./...`: passed.
+- `rtk git diff --check`: passed.
+- Built Windows AMD64 with `GOOS=windows`, `GOARCH=amd64`, `CGO_ENABLED=0`; executable reports `Tencent Game Audit v0.6.0`. Temporary validation EXE SHA-256: `8E52715EB60DF4482D897569B976537259ACBFC7F25FFCA2F94A554AB905E01A`.
+- Synthetic CLI smoke test created a temporary `Launcher/intl_service/debug.log` and a binary `.log` under `Launcher/log/tinyget/`; report showed 2 analyzed logs, detected the exact K2F marker and MZ disguise, redacted the fixture token, and did not count nested `k2f_chan` strings as an independent IOC cluster.
+- No installed game directory was scanned and no actual infection assessment was performed. The smoke test did collect the scanner's normal local Windows system snapshot; no server was started and no network/C2 endpoint was contacted.
+- Build outputs and synthetic fixtures were written to the OS temp directory, not over the existing root EXE, `portable-release`, or ZIP. Temporary test artifacts are removed after validation.
+
+**Publication:** PR/CI/merge/tag/GitHub Release verification remains pending.
+
+### 2026-11-05 — NIKKE / K2F incident leads and cross-game hunting scope
+
+**User request (available wording):** “好先記錄，然後這關於妮姬的問題希能針對騰訊遊戲去做減查” (record the plan first, and investigate the NIKKE-related issue across Tencent games).
+
+**User-supplied incident details recorded as unverified leads:**
+- Stage 1 reportedly involved four modified Level Infinite launcher JavaScript assets (`aegis-fix.min.js`, `vue-bucket.min.js`, `images.7fec4c32.js`, `FeedList.feb647c9.js`), external loading from `insightjs.com`, conditional payload delivery, and a payload disguised as a `.log` under `Launcher/log/tinyget/`.
+- Reported execution markers include `k2f_chan` in launcher `debug.log`, `k2f_chan registered`, `agent started as`, and `lua downloaded to log\\tinyget`.
+- Stage 2 reportedly installed browser persistence on only a subset of hosts, with Chrome-associated DLL and per-user HKCU registry evidence.
+- Reported impact includes remote command execution, file access, screenshots, browser credential/session theft, Windows/developer credentials, API tokens, wallet data, and NIKKE account data.
+
+**Recorded decisions:**
+- Treat the user's description as threat-intelligence leads, not independently verified facts. Retain source provenance and require corroboration before raising confidence.
+- Keep the four launcher assets, `insightjs.com`, K2F strings/structures, tinyget artifacts, and known K2F browser-persistence artifacts scoped to the NIKKE / Level Infinite incident unless independently validated in another title.
+- Expand the investigation across Tencent-operated, published, invested, and partner games by hunting for shared *techniques* and verified shared components: launcher web assets, remote script loading, service/debug logs, transient payload traces, browser persistence, and correlated file/process/registry/network timelines.
+- Do not infer compromise from Tencent ownership, investment, an isolated `k2f_chan` string, a generic injection API, an unsigned file, or a browser process name.
+- Keep all checks read-only; never execute samples, contact suspected C2, collect secret contents, or upload private logs. Include scan limitations and redaction.
+
+**Files updated:**
+- Added `docs/NIKKE-K2F-CROSS-GAME-HUNTING.md` with reported attack stages, IOC scope, cross-game hypotheses, severity/evidence handling, implementation plan, and safety constraints.
+- Updated `docs/DETECTION-SOURCES.md` with the provenance boundary and cross-game investigation guidance.
+- Updated root `README.md` with the new document link.
+- Updated `CHANGELOG.md` under `Unreleased`.
+
+**Validation/publication:** Documentation-only change. `rtk git diff --check` passed; reviewed the resulting documentation diff and confirmed the new plan is linked from the root README. No Go tests or binary build were needed because scanner code was not changed. No host scan, server start, commit, push, PR, merge, tag, or release was performed.
+
 ### 2026-11-05 — Deep file analysis mode
 
 **User request:** “能讓他在更深入檢測檔案嗎?” (enable deeper file inspection).
