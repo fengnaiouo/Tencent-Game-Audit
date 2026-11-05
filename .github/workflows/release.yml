@@ -1,20 +1,25 @@
-﻿name: Build and release
+name: Build and release
 
 on:
   push:
-    tags: ["v*"]
-  pull_request:
-  workflow_dispatch:
+    tags: ["v*.*.*"]
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  windows-build:
+  build:
+    name: Test and package Windows x64
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
           cache-dependency-path: tencent-game-audit/go.mod
@@ -24,27 +29,47 @@ jobs:
       - name: Vet
         working-directory: tencent-game-audit
         run: go vet ./...
-      - name: Build portable executable
-        working-directory: tencent-game-audit
+      - name: Build and package
         shell: pwsh
+        working-directory: tencent-game-audit
         run: |
+          $ErrorActionPreference = 'Stop'
           $env:GOOS = 'windows'
           $env:GOARCH = 'amd64'
           $env:CGO_ENABLED = '0'
           go build -trimpath -ldflags='-s -w' -o Tencent-Game-Audit.exe .
-          if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
           New-Item -ItemType Directory -Force ../dist | Out-Null
           Copy-Item Tencent-Game-Audit.exe ../dist/
           Copy-Item portable-readme.txt ../dist/README.txt
-          Compress-Archive -Path ../dist/* -DestinationPath ../Tencent-Game-Audit-Windows-x64.zip -Force
-      - name: Upload build artifacts
+          Compress-Archive -Path ../dist/Tencent-Game-Audit.exe, ../dist/README.txt -DestinationPath ../Tencent-Game-Audit-Windows-x64.zip -Force
+          $hash = (Get-FileHash ../Tencent-Game-Audit-Windows-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Tencent-Game-Audit-Windows-x64.zip" | Set-Content ../SHA256SUMS.txt -Encoding ascii
+      - name: Upload release files
         uses: actions/upload-artifact@v4
         with:
-          name: Tencent-Game-Audit-Windows-x64
-          path: Tencent-Game-Audit-Windows-x64.zip
-      - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+          name: windows-x64-release
+          path: |
+            Tencent-Game-Audit-Windows-x64.zip
+            SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release files
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-x64-release
+          path: dist
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: Tencent-Game-Audit-Windows-x64.zip
+          files: |
+            dist/Tencent-Game-Audit-Windows-x64.zip
+            dist/SHA256SUMS.txt

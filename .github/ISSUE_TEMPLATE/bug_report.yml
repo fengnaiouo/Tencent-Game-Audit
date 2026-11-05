@@ -1,0 +1,54 @@
+name: Bug report
+description: Report a reproducible problem in Tencent Game Audit.
+title: "bug: "
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not attach unredacted audit JSON, credentials, personal data, or malware samples."
+  - type: input
+    id: version
+    attributes:
+      label: Application version
+      description: Include the release tag or commit.
+      placeholder: v0.2.0
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version and architecture
+      placeholder: Windows 11 24H2, x64
+    validations:
+      required: true
+  - type: input
+    id: locale
+    attributes:
+      label: Windows locale and scanner language
+      placeholder: zh-TW / -lang zh-Hant
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include sanitized command-line options.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and sanitized logs
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy and safety check
+      options:
+        - label: I removed usernames, device identifiers, credentials, private paths, and other sensitive information.
+          required: true

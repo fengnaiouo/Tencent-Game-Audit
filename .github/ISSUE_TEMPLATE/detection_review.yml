@@ -1,0 +1,40 @@
+name: Detection review / possible false positive
+description: Submit evidence to review an IOC or detection result.
+title: "detection: "
+labels: [detection-review, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not upload full audit reports, live credentials, private samples, or personal data."
+  - type: input
+    id: finding
+    attributes:
+      label: Finding ID or IOC
+      description: Provide the exact finding identifier or a safely shareable indicator.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Scanner version
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence and context
+      description: Explain why the result may be valid, stale, or a false positive.
+    validations:
+      required: true
+  - type: textarea
+    id: provenance
+    attributes:
+      label: Source / provenance
+      description: Link public reporting or describe a reproducible analysis method.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy and evidence check
+      options:
+        - label: I have permission to share this information and removed sensitive host data.
+          required: true

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability disclosure
+    url: https://github.com/fengnaiouo/Tencent-Game-Audit/security/advisories/new
+    about: Privately report vulnerabilities. Do not publish exploit details or sensitive host reports.
+  - name: Support and usage questions
+    url: https://github.com/fengnaiouo/Tencent-Game-Audit/blob/main/SUPPORT.md
+    about: Read support guidance before opening an issue.
