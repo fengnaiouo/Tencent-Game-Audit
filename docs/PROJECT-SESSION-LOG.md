@@ -400,3 +400,12 @@ _Append dated results here. Do not rewrite earlier entries; correct mistakes wit
 - Pre-existing untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain untouched and excluded from staging.
 
 **Publication pending:** PR/CI, merge, and a versioned release decision remain to be completed.
+
+**Publication completed:**
+- Committed as `9e9c9cd` on `feat/project-governance-rust-core`; [PR #20](https://github.com/fengnaiouo/Tencent-Game-Audit/pull/20) passed required CI run [42103109883](https://github.com/fengnaiouo/Tencent-Game-Audit/actions/runs/42103109883) and merged at `2026-11-05T20:26:59Z`.
+- Merge commit: `296c6c1c4371cd4727fb01b243d757eee1cb5093`. Local `main` is synchronized with `origin/main`.
+- Created and pushed annotated tag `v0.10.0`. Post-merge CI run [42103481492](https://github.com/fengnaiouo/Tencent-Game-Audit/actions/runs/42103481492) and release workflow [42103545439](https://github.com/fengnaiouo/Tencent-Game-Audit/actions/runs/42103545439) both completed successfully.
+- Published [GitHub Release v0.10.0](https://github.com/fengnaiouo/Tencent-Game-Audit/releases/tag/v0.10.0). Assets: `Tencent-Game-Audit-Windows-x64.zip` (1,712,260 bytes) and `SHA256SUMS.txt` (102 bytes). Downloaded the published ZIP, verified it against the published checksum file, extracted it, and ran the executable; it printed `Tencent Game Audit v0.10.0`. ZIP SHA-256: `b6d1311842caddb4a01dc8e02f5212f866f82e25ed34071d5720b6e430c4b1e2`.
+- Release workflow still emits the known non-blocking Node.js 20 deprecation annotation for `actions/upload-artifact@v4`; build, validation, packaging, and publication all succeeded.
+- Rust remains experimental source code and is not linked into or bundled with the released Go executable. Issue #19 tracks parity and measured memory benchmarking. Issue #18 tracks the still-open maintainer license decision; no `LICENSE` file was added.
+- Final `rtk git status --short --branch`: `main...origin/main`; only pre-existing unrelated untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain. No server was started and no actual game or fixed-volume scan was run.
