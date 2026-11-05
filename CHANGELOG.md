@@ -4,6 +4,8 @@ All notable changes to Tencent Game Audit are documented here.
 
 ## Unreleased
 
+## [0.3.0] - 2026-11-05
+
 ### Added
 - Shared-model TXT, offline HTML, CSV, and Markdown report output alongside JSON.
 - `-format` and `-out` options while retaining the legacy `-json` option.
