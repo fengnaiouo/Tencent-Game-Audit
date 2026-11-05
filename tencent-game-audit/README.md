@@ -34,10 +34,12 @@ Supported report formats are `json` (default), `txt`, `html`, `csv`, and `md`. U
 
 ### 深度檔案檢測
 
+- 一般掃描會完整遞迴每個已選定的掃描根目錄，不再設定全域或單一根目錄檔案數上限，也不會按 `Windows`、`packages`、`node_modules`、`.git` 等目錄名稱任意跳過子目錄。
+- `-full` 會將所有已掛載的固定磁碟區根目錄納入掃描（例如 `C:\\`、`D:\\`），不只掃描自動發現的遊戲資料夾。這可能需要數小時甚至更久。`-root-only` 優先於 `-full`，仍只掃描明確提供的根目錄。
 - `-root-only` 是嚴格範圍模式：只遞迴掃描明確提供的 `-root` 路徑（可重複指定），不查詢解除安裝登錄檔、不探索 Steam/Epic/WeGame/Launcher/其他使用者資料夾，也不收集全域 Windows 系統快照（程序、服務、排程、登錄持久化、網路連線、DNS、hosts、Defender 等）。報告會列出實際掃描根目錄，並標明系統快照未收集。
-- 嚴格模式下不套用一般自動探索的目錄排除清單，因此 `packages` 等遊戲子目錄也會掃描；符號連結／reparse point 仍不會跟隨，以免越出指定根目錄。
-- `-deep` 會對所選掃描根目錄中的所有檔案（不限副檔名）進行唯讀內容檢查與 SHA-256 計算；不會執行、載入、解壓或修改檔案。內容讀取有硬性上限，即使檔案在掃描期間變大也不會突破單檔限制。
-- 建議先用 `-root-only -root "D:\\Delta Force" -deep` 限定單一遊戲目錄，再逐一掃描其他遊戲庫。深度模式上限為每個根目錄 250,000 個檔案、總計 1,000,000 個檔案；單檔分析上限 512 MiB，超限／讀取失敗會列入報告。
+- 不跟隨符號連結／reparse point，以免掃描逃出指定根目錄；這些路徑會逐項記錄為範圍排除。無法讀取的目錄或檔案會記錄錯誤並繼續掃描其他項目。
+- `-deep` 會對所選掃描根目錄中的所有檔案（不限副檔名）進行唯讀內容檢查與 SHA-256 計算；不會執行、載入、解壓或修改檔案。檔案數量沒有固定上限；一般靜態字串／IOC 內容檢查上限 64 MiB、深度分析上限 512 MiB、Log 文字分析上限 16 MiB，超限／讀取失敗會列入 `ContentAnalysisIncomplete`。
+- 報告會列出檔案數、走訪項目數、目錄數、無法讀取項目、未跟隨 reparse point 數、`TraversalComplete` 及 `ContentAnalysisIncomplete`。只有 `TraversalComplete=true` 且 `ContentAnalysisIncomplete=0`、`SkippedFiles=0` 時，才能說本次所選範圍的走訪及受支援內容分析沒有已知缺口；這仍不代表已涵蓋所選根目錄之外的磁碟或已解密壓縮資料。
 - 通用 LuaJIT `1B 4C 4A 01` 必須位於檔案開頭，且旗標與第一個 prototype 長度通過結構檢查，才會列為低信心 `REVIEW`；不再把 PE 指令位移中偶然出現的相同 bytes 當成 LuaJIT。只有額外命中 K2F 專屬結構或其他獨立 IOC，才會提高嚴重度。LuaJIT 標頭本身不是惡意程式證據。
 - Authenticode 狀態分別呈現 `Valid`、`NotSigned`、`UntrustedRoot`、`InvalidSignature`、`NotSupported`、`UnknownError`；未簽署或憑證根不受信任本身不等於檔案惡意或遭竄改。
 - 深度模式仍不會解密或解壓未知封裝、Chromium LevelDB 壓縮紀錄，也不是反編譯器或沙箱；必要時應以可信來源樣本比對 SHA-256，並使用隔離環境中的專業鑑識工具。
@@ -47,7 +49,7 @@ Supported report formats are `json` (default), `txt`, `html`, `csv`, and `md`. U
 - 進階 Log 鑑識預設啟用，會在選定的遊戲／Launcher 根目錄尋找 `.log`、輪替 `.log.*`，以及特定 debug/service/crash `.txt` 紀錄。`-no-logs` 只停用這個上下文分析流程；一般檔案 IOC 掃描仍會檢查支援的 Log 內容。
 - NIKKE 會特別涵蓋 `Launcher/intl_service/debug.log` 與 `Launcher/log/tinyget/`（透過遞迴發現，不假設每個地區版本都有這些路徑）。
 - `k2f_chan registered`、`lua downloaded to log\\tinyget` 是事件專屬強指標；單獨 `k2f_chan`、資產檔名或通用程序 API 只列為 REVIEW，不直接判定感染。
-- 每個 Log 最多分析 16 MiB，全域最多 20,000 個候選檔案；支援 UTF-8 與含 BOM 的 UTF-16。壓縮 Log 不會解壓；二進制偽裝 Log 不會當文字解析，但會做有限的 SHA-256、MZ 與 LuaJIT/K2F 靜態檢查。
+- Log 候選檔案不再設全域或每根目錄數量上限；單一 Log 文字解析仍限制 16 MiB，超限會明確列入 `ContentAnalysisIncomplete`。支援 UTF-8 與含 BOM 的 UTF-16。壓縮 Log 不會解壓；二進制偽裝 Log 不會當文字解析，但會做有限的 SHA-256、MZ 與 LuaJIT/K2F 靜態檢查。
 - 證據包含規則 ID、行號、有限前後文、可取得的時間戳記與 SHA-256。密碼、Token、Cookie、API Key、Bearer 值會在輸出上下文中遮蔽。原始 Log 不會被修改或上傳。
 
 ### 嚴格指定目錄模式（v0.7.0）

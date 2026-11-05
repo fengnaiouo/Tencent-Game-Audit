@@ -19,6 +19,7 @@ A portable, read-only Windows security auditing tool for Tencent's game ecosyste
 - JSON field names remain stable English identifiers for automation and SIEM ingestion. Timestamps use RFC 3339 with the host's local UTC offset.
 - Console language can be selected with `-lang auto|en|zh-Hant|zh-Hans|ja|ko|pt-BR|fr|de|es|id|th|vi|ru|pl|tr|it`. Unsupported locales fall back to English. `auto` uses locale environment variables or the Windows user UI culture and otherwise falls back to English; explicitly set `-lang` for predictable output. Summary labels are localized; finding details and JSON identifiers remain English for stable triage and automation.
 - IOC matching is region-independent. Regional game editions, publisher names, launcher paths, and custom install locations can differ; use repeatable `-root` arguments to include locations not discovered automatically.
+- Selected roots are traversed without arbitrary global/per-root file-count caps or directory-name pruning. `-full` includes every mounted fixed volume; reports distinguish complete traversal from incomplete content analysis and count inaccessible/reparse-point entries.
 
 ## Requirements
 
@@ -49,7 +50,7 @@ A portable, read-only Windows security auditing tool for Tencent's game ecosyste
 # System persistence, process and network snapshot only
 .\Tencent-Game-Audit.exe -system-only
 
-# Raise file scan budget
+# Scan every mounted fixed volume (may take many hours)
 .\Tencent-Game-Audit.exe -full
 
 # Choose report/console locale and a private report destination
@@ -80,14 +81,14 @@ The scanner is read-only: it does not delete, quarantine, repair, terminate proc
 - `CRITICAL`: a high-confidence, specifically documented IOC or persistence indicator matched.
 - `WARNING`: multiple or meaningful indicators warrant investigation; not a definitive infection verdict.
 - `REVIEW`: heuristic or contextual evidence requiring analyst validation.
-- `INFO`: inventory, scan limits, or informational observations.
+- `INFO`: inventory, coverage limitations, or informational observations.
 
 ### Log Forensics
 
 - Enhanced Log Forensics is enabled by default for selected game/launcher roots. It inspects `.log`, rotated `.log.*`, and selected debug/service/crash text logs; `-no-logs` disables this dedicated context-analysis pass, while normal file IOC scanning remains active.
 - The NIKKE profile includes the reported `Launcher/intl_service/debug.log` and `Launcher/log/tinyget/` locations through recursive discovery. Paths are not assumed to exist in every region or launcher version.
 - Exact `k2f_chan registered` and `lua downloaded to log\\tinyget` markers are high-confidence incident-specific evidence. A bare `k2f_chan`, asset filename, or generic process API string is only a review lead.
-- Log parsing is bounded to 16 MiB per file and 20,000 candidate logs globally. Current/rotated text logs support UTF-8 and UTF-16 BOMs; compressed logs and binary payloads are not parsed as text. Binary log-named files still receive bounded hash and selected static signature checks.
+- Log discovery has no global candidate-count cap; text parsing is bounded to 16 MiB per file. Current/rotated text logs support UTF-8 and UTF-16 BOMs; compressed logs and binary payloads are not parsed as text. Reports identify incomplete content analysis.
 - Evidence contains line number, nearby context, timestamp text when present, SHA-256, and rule ID. Secret-like values in context are redacted. The original log is never modified or uploaded.
 - A deleted or conditionally delivered payload may leave no surviving log or file. A no-hit result cannot establish that an event did not occur.
 

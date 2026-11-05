@@ -326,5 +326,35 @@ _Append dated results here. Do not rewrite earlier entries; correct mistakes wit
 - Release assets: `Tencent-Game-Audit-Windows-x64.zip` (1,709,543 bytes) and `SHA256SUMS.txt` (102 bytes). Downloaded the published ZIP, verified it against the published checksum file, extracted it, and ran the executable; it printed `Tencent Game Audit v0.8.0`. ZIP SHA-256: `3052f5551b24b3c45a91426497ed0414e0f63197871a76b406ca74dc7d77ac08`.
 - Release workflow emitted the existing non-blocking Node.js 20 deprecation annotation for `actions/upload-artifact@v4`; packaging and publication both succeeded.
 - Final `rtk git status --short --branch`: `main...origin/main`; only pre-existing untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain. No server was started and no actual game files were scanned.
+
+### 2026-11-05 — Remove scan-count truncation and add full-volume mode (v0.9.0)
+
+**User request:** The user does not want scan coverage gaps and expects a complete scan rather than stopping after a fixed number of files.
+
+**Findings in v0.8.0:**
+- Main file traversal had 100,000 files by default, 500,000 with `-full`, 1,000,000 with `-deep`, and a 25,000 / 250,000 per-root cutoff.
+- Log Forensics stopped at 20,000 candidates globally and 10,000 per root.
+- The default scan pruned directory names such as `Windows`, `packages`, `node_modules`, `.git`, `ProgramData`, `Users`, and `WindowsApps`.
+- `-full` only raised the budget; it did not scan every fixed volume.
+
+**Implementation:**
+- Removed all global/per-root file-count caps from file and log traversal.
+- Removed directory-name pruning from selected-root traversal; directories are no longer omitted solely because of their names.
+- Reworked `-full` to add every mounted fixed-volume root (for example `C:\\`, `D:\\`) to scan scope. Nested explicit roots already covered by a volume are deduplicated. `-root-only` takes precedence and remains restricted to explicit roots.
+- Added report coverage counters: filesystem entries visited, directories visited, unreadable entries, reparse points not followed, traversal completion, and incomplete content-analysis count.
+- Access errors are recorded and the walker continues through other entries. Symlink/reparse points are not followed, including an explicitly supplied root that is itself a symlink.
+- Log candidate discovery no longer has a count cutoff. The existing 16 MiB text-log limit, 64 MiB selected static-content limit, and 512 MiB deep-analysis limit remain for bounded resource use; these now contribute to explicit incomplete-content counters and findings rather than silently disappearing.
+- Updated documentation and regression tests for no count truncation, previously excluded directory names, full-volume root de-duplication, and coverage fields in all report formats.
+
+**Validation:**
+- `rtk go test -count=1 ./...`: 69 tests passed.
+- `rtk go vet ./...`: passed.
+- `rtk git diff --check`: passed.
+- Windows AMD64 cross-build completed; executable printed `Tencent Game Audit v0.9.0`.
+- Synthetic end-to-end `-deep -root-only` CLI smoke test created five files under `packages`, `.git`, `node_modules`, and `Windows` directories. All five were scanned; one log was analyzed; report showed 15 filesystem entries, 10 directories, `traversal_complete=true`, `content_analysis_incomplete=0`, and `skipped_files=0`.
+- No actual game directory or full disk volume was scanned. Synthetic fixtures, report, and temporary executable were removed. No server was started.
+- Pre-existing untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain untouched and excluded from staging.
+
+**Publication pending:** feature PR/CI, merge, tag, and release verification.
 - The repository build script was deliberately not used because it overwrites pre-existing root EXE and portable ZIP artifacts. The Windows build will be written to a unique OS temporary path instead.
 - Pre-existing untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain untouched and excluded from staging. No server or real game scan was started.

@@ -46,7 +46,7 @@ This document records defensive techniques reviewed for Tencent Game Audit. The 
 - NIKKE-specific rules are `NIKKE-K2F-LOG-001` through `NIKKE-K2F-LOG-012`. Exact `k2f_chan registered` and `lua downloaded to log\\tinyget` markers are treated as high-confidence incident-specific evidence; `k2f_chan` alone and launcher asset names are `REVIEW` only.
 - `GENERIC-LOG-*` rules are low-confidence process/loader technique references. Their presence in logs is not proof of injection or compromise and must be correlated with process, file, registry, and network evidence.
 - Each parsed finding retains rule ID, line number, bounded nearby context, timestamp text when present, and the source log SHA-256. Secret-like values are redacted from context. Original logs are not changed or transmitted.
-- Text analysis is limited to 16 MiB per file and 20,000 candidate logs globally. UTF-8 and UTF-16 BOMs are supported. Compressed/oversized/unreadable logs are explicit coverage limitations. Binary files with log-like names receive bounded hash and selected static signature checks but are not rendered as text or executed.
+- Log candidate discovery has no global or per-root file-count cap. Text analysis remains limited to 16 MiB per file; UTF-8 and UTF-16 BOMs are supported. Compressed/oversized/unreadable logs are explicit content-coverage limitations. Binary files with log-like names receive bounded hash and selected static signature checks but are not rendered as text or executed.
 
 ## Handling and legal notes
 

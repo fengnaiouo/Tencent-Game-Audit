@@ -32,7 +32,7 @@ import (
 var iocFS embed.FS
 
 const clsid = `{E77CC89B-7401-4C04-8CED-149DB35ADD04}`
-const version = "0.8.0"
+const version = "0.9.0"
 
 var knownHashes = map[string]string{
 	"f3e93d049851d5c19552c7d9b73c8be4580dc9d549e8f65f9f0c357c1df9d252": "K2F Sample-A.dll loader",
@@ -112,32 +112,33 @@ type Game struct {
 	Relation    string `json:"relation"`
 }
 type Report struct {
-	Version                 string         `json:"scanner_version"`
-	Generated               string         `json:"generated"`
-	Language                string         `json:"language"`
-	Computer                string         `json:"computer"`
-	User                    string         `json:"user"`
-	Mode                    string         `json:"mode"`
-	ScanRoots               []string       `json:"scan_roots"`
-	SystemSnapshotCollected bool           `json:"system_snapshot_collected"`
-	ScannedFiles            int            `json:"scanned_files"`
-	SkippedFiles            int            `json:"skipped_files"`
-	LogFilesScanned         int            `json:"log_files_scanned"`
-	Games                   []Game         `json:"game_inventory"`
-	Findings                []Finding      `json:"findings"`
-	System                  SystemSnapshot `json:"system_snapshot"`
-	Limitations             []string       `json:"limitations"`
+	Version                   string         `json:"scanner_version"`
+	Generated                 string         `json:"generated"`
+	Language                  string         `json:"language"`
+	Computer                  string         `json:"computer"`
+	User                      string         `json:"user"`
+	Mode                      string         `json:"mode"`
+	ScanRoots                 []string       `json:"scan_roots"`
+	SystemSnapshotCollected   bool           `json:"system_snapshot_collected"`
+	ScannedFiles              int            `json:"scanned_files"`
+	SkippedFiles              int            `json:"skipped_files"`
+	EntriesVisited            int            `json:"filesystem_entries_visited"`
+	DirectoriesVisited        int            `json:"directories_visited"`
+	UnreadableEntries         int            `json:"unreadable_entries"`
+	ReparsePointsSkipped      int            `json:"reparse_points_skipped"`
+	TraversalComplete         bool           `json:"traversal_complete"`
+	ContentAnalysisIncomplete int            `json:"content_analysis_incomplete"`
+	LogFilesScanned           int            `json:"log_files_scanned"`
+	Games                     []Game         `json:"game_inventory"`
+	Findings                  []Finding      `json:"findings"`
+	System                    SystemSnapshot `json:"system_snapshot"`
+	Limitations               []string       `json:"limitations"`
 }
 
 type config struct {
-	full         bool
 	deep         bool
 	logForensics bool
-	maxFiles     int
-	maxPerRoot   int
 	maxBytes     int64
-	roots        []string
-	rootOnly     bool
 }
 
 // readFileBounded prevents a file that grows after its metadata check from
@@ -168,6 +169,7 @@ func deepInspectFile(path string, size, maxBytes int64, r *Report) {
 	if size < 1 || size > maxBytes {
 		if size > maxBytes {
 			r.SkippedFiles++
+			r.ContentAnalysisIncomplete++
 			addFinding(r, "INFO", "Deep analysis size limit", path, fmt.Sprintf("File size %d exceeds deep-analysis limit %d bytes", size, maxBytes), "scan limitation")
 		}
 		return
@@ -175,6 +177,7 @@ func deepInspectFile(path string, size, maxBytes int64, r *Report) {
 	b, err := readFileBounded(path, maxBytes)
 	if err != nil {
 		r.SkippedFiles++
+		r.ContentAnalysisIncomplete++
 		category := "Deep analysis read failure"
 		if strings.Contains(err.Error(), "bounded read limit") {
 			category = "Deep analysis size limit"
@@ -511,7 +514,8 @@ func inspectFile(path string, size int64, r *Report, maxBytes int64) {
 	ext := strings.ToLower(filepath.Ext(name))
 	// Hash executable/library/script/payload candidates even when their filename
 	// has been changed. This avoids depending on the original malware filename.
-	if size <= maxBytes && (ext == ".dll" || ext == ".exe" || ext == ".js" || ext == ".lua" || ext == ".bundle" || name == "insight.bundle") {
+	digestCandidate := ext == ".dll" || ext == ".exe" || ext == ".js" || ext == ".lua" || ext == ".bundle" || name == "insight.bundle"
+	if size <= maxBytes && digestCandidate {
 		if d, e := fileDigests(path, maxBytes); e == nil {
 			if desc, ok := knownHashes[d["sha256"]]; ok {
 				addFinding(r, "CRITICAL", "Known malicious SHA256", path, desc+"; SHA256="+d["sha256"], "high")
@@ -522,11 +526,20 @@ func inspectFile(path string, size int64, r *Report, maxBytes int64) {
 			if desc, ok := knownMD5[d["md5"]]; ok {
 				addFinding(r, "CRITICAL", "Known malicious MD5", path, desc+"; MD5="+d["md5"], "high")
 			}
+		} else {
+			r.SkippedFiles++
+			r.ContentAnalysisIncomplete++
+			addFinding(r, "INFO", "File digest unavailable", path, "Could not calculate complete candidate-file digests: "+e.Error(), "scan limitation")
 		}
+	} else if digestCandidate && size > maxBytes {
+		r.SkippedFiles++
+		r.ContentAnalysisIncomplete++
+		addFinding(r, "INFO", "File digest size limit", path, fmt.Sprintf("Candidate file is %d bytes; complete digest limit is %d bytes", size, maxBytes), "scan limitation")
 	}
 	pathLower := strings.ToLower(path)
 	cacheFile := strings.Contains(pathLower, "leveldb") || strings.Contains(pathLower, "code cache") || strings.Contains(pathLower, "tinyget") || strings.EqualFold(name, "transportsecurity") || strings.EqualFold(name, "network persistent state") || strings.Contains(pathLower, "reporting and nel")
-	if size > 0 && size <= 64<<20 && (cacheFile || ext == ".log" || ext == ".ldb" || ext == ".js" || ext == ".lua" || ext == ".bundle" || ext == ".dat" || ext == ".bin" || ext == ".exe" || ext == ".dll" || ext == ".sys" || name == "data_3") {
+	contentCandidate := cacheFile || ext == ".log" || ext == ".ldb" || ext == ".js" || ext == ".lua" || ext == ".bundle" || ext == ".dat" || ext == ".bin" || ext == ".exe" || ext == ".dll" || ext == ".sys" || name == "data_3"
+	if size > 0 && size <= 64<<20 && contentCandidate {
 		b, e := readFileBounded(path, 64<<20)
 		if e == nil {
 			low := strings.ToLower(string(b))
@@ -601,8 +614,13 @@ func inspectFile(path string, size int64, r *Report, maxBytes int64) {
 			}
 		} else {
 			r.SkippedFiles++
+			r.ContentAnalysisIncomplete++
 			addFinding(r, "INFO", "File content read limitation", path, e.Error(), "scan limitation")
 		}
+	} else if size > 64<<20 && contentCandidate {
+		r.SkippedFiles++
+		r.ContentAnalysisIncomplete++
+		addFinding(r, "INFO", "File content size limit", path, fmt.Sprintf("Candidate content is %d bytes; selected static string/IOC inspection limit is %d bytes", size, 64<<20), "scan limitation")
 	}
 	if strings.HasPrefix(name, "k2f-bcreds") || strings.HasPrefix(name, "k2f_screen") {
 		addFinding(r, "CRITICAL", "K2F collection artifact", path, "Filename matches a documented credential-staging or screenshot artifact", "high")
@@ -803,19 +821,25 @@ func indexBytes(b, n []byte) int {
 
 func scanRoots(roots []string, cfg config, r *Report) {
 	seen := map[string]bool{}
-	globalLimitReached := false
 	for _, root := range unique(roots) {
-		if r.ScannedFiles >= cfg.maxFiles {
-			globalLimitReached = true
-			break
-		}
-		info, err := os.Stat(root)
+		linkInfo, err := os.Lstat(root)
 		if err != nil {
 			r.SkippedFiles++
+			r.UnreadableEntries++
+			r.TraversalComplete = false
 			addFinding(r, "INFO", "Scan root unavailable", root, "Could not inspect scan root: "+err.Error(), "scan limitation")
 			continue
 		}
+		if linkInfo.Mode()&os.ModeSymlink != 0 {
+			r.ReparsePointsSkipped++
+			r.SkippedFiles++
+			r.TraversalComplete = false
+			addFinding(r, "INFO", "Reparse point not followed", root, "The selected root itself is a link/reparse point and was not followed", "scope boundary")
+			continue
+		}
+		info := linkInfo
 		if !info.IsDir() {
+			r.EntriesVisited++
 			r.ScannedFiles++
 			inspectFile(root, info.Size(), r, cfg.maxBytes)
 			if cfg.deep {
@@ -823,35 +847,40 @@ func scanRoots(roots []string, cfg config, r *Report) {
 			}
 			continue
 		}
-		rootFiles := 0
-		_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			r.EntriesVisited++
 			if err != nil {
 				r.SkippedFiles++
+				r.UnreadableEntries++
+				r.TraversalComplete = false
 				addFinding(r, "INFO", "Filesystem entry unavailable", path, "Could not inspect filesystem entry: "+err.Error(), "scan limitation")
 				return nil
 			}
 			if d.IsDir() {
+				r.DirectoriesVisited++
 				if isSHA256DirName(d.Name()) && strings.EqualFold(filepath.Base(filepath.Dir(path)), "PlatformExperienceHelper") {
 					addFinding(r, "WARNING", "Possible residual browser persistence directory", path, "A 64-hex folder exists under PlatformExperienceHelper; verify whether the documented DLL is present", "medium")
 				}
-				if path != root && (d.Type()&os.ModeSymlink != 0 || (!cfg.rootOnly && skipDir(d.Name()))) {
+				if d.Type()&os.ModeSymlink != 0 {
+					r.ReparsePointsSkipped++
+					r.SkippedFiles++
+					r.TraversalComplete = false
+					addFinding(r, "INFO", "Reparse point not followed", path, "Directory link/reparse point was not followed to prevent scanning outside the selected root", "scope boundary")
 					return filepath.SkipDir
 				}
 				return nil
 			}
-			if d.Type()&os.ModeSymlink != 0 || seen[strings.ToLower(path)] {
+			if d.Type()&os.ModeSymlink != 0 {
+				r.ReparsePointsSkipped++
+				r.SkippedFiles++
+				r.TraversalComplete = false
+				addFinding(r, "INFO", "Reparse point not followed", path, "File link/reparse point was not followed to prevent scanning outside the selected root", "scope boundary")
 				return nil
 			}
-			if r.ScannedFiles >= cfg.maxFiles {
-				globalLimitReached = true
-				return filepath.SkipAll
-			}
-			if rootFiles >= cfg.maxPerRoot {
-				addFinding(r, "INFO", "Per-root scan limit", root, fmt.Sprintf("Stopped after %d files in this root", cfg.maxPerRoot), "scan limitation")
-				return filepath.SkipDir
+			if seen[strings.ToLower(path)] {
+				return nil
 			}
 			seen[strings.ToLower(path)] = true
-			rootFiles++
 			r.ScannedFiles++
 			if r.ScannedFiles%5000 == 0 {
 				fmt.Printf("Progress: %d files scanned; %d findings so far\n", r.ScannedFiles, len(r.Findings))
@@ -859,6 +888,9 @@ func scanRoots(roots []string, cfg config, r *Report) {
 			fi, e := d.Info()
 			if e != nil {
 				r.SkippedFiles++
+				r.UnreadableEntries++
+				r.TraversalComplete = false
+				addFinding(r, "INFO", "File metadata unavailable", path, "Could not inspect file metadata: "+e.Error(), "scan limitation")
 				return nil
 			}
 			inspectFile(path, fi.Size(), r, cfg.maxBytes)
@@ -867,21 +899,11 @@ func scanRoots(roots []string, cfg config, r *Report) {
 			}
 			return nil
 		})
-		if globalLimitReached {
-			break
+		if walkErr != nil {
+			r.TraversalComplete = false
+			addFinding(r, "INFO", "Filesystem traversal failure", root, "Directory traversal ended with an error: "+walkErr.Error(), "scan limitation")
 		}
 	}
-	if globalLimitReached {
-		addFinding(r, "INFO", "Global scan limit", "", fmt.Sprintf("Stopped at the configured limit of %d files; use -full or -root for focused scanning", cfg.maxFiles), "n/a")
-	}
-}
-
-func skipDir(n string) bool {
-	switch strings.ToLower(n) {
-	case "windows", "winsxs", "system volume information", "$recycle.bin", "node_modules", ".git", "packages", "windowsapps", "programdata", "users", "program files", "program files (x86)":
-		return true
-	}
-	return false
 }
 
 func isSHA256DirName(name string) bool {
@@ -1041,24 +1063,40 @@ func discoverTencentRoots() []string {
 
 var gameLibraryDirPattern = regexp.MustCompile(`(?i)^(games?|steam ?library|steamapps|wegame|tencent( games)?|riot games|level infinite|epic games|garena|txgameassistant|txgamedownload|netease games|nikke|delta force|arena breakout|honor of kings|pubg mobile|peacekeeper elite|valorant|league of legends|\x{738B}\x{8005}\x{8363}\x{8000}|\x{738B}\x{8005}\x{69AE}\x{8000}|\x{4E09}\x{89D2}\x{6D32}\x{884C}\x{52A8}|\x{4E09}\x{89D2}\x{6D32}\x{884C}\x{52D5}|\x{548C}\x{5E73}\x{7CBE}\x{82F1}|\x{82F1}\x{96C4}\x{8054}\x{76DF}|\x{82F1}\x{96C4}\x{806F}\x{76DF}|\x{7A7F}\x{8D8A}\x{706B}\x{7EBF}|\x{7A7F}\x{8D8A}\x{706B}\x{7DDA}|\x{65E0}\x{754F}\x{5951}\x{7EA6}|\x{7279}\x{6218}\x{82F1}\x{8C6A}|\x{9006}\x{6218}|\x{9006}\x{6230}|\x{706B}\x{5F71}\x{5FCD}\x{8005})$`)
 
-func discoverGameLibraryRoots(r *Report) []string {
+func mountedFixedVolumeRoots(r *Report) []string {
 	if runtime.GOOS != "windows" {
 		return nil
 	}
-	var roots []string
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	volumes, err := exec.CommandContext(ctx, "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", `Get-CimInstance Win32_LogicalDisk | Where-Object {$_.DriveType -eq 3 -and $_.DeviceID} | Select-Object -ExpandProperty DeviceID | ConvertTo-Json -Compress`).Output()
 	if err != nil {
 		addFinding(r, "INFO", "Volume discovery unavailable", "", "Could not enumerate mounted fixed volumes: "+err.Error(), "scan limitation")
-		return roots
+		r.TraversalComplete = false
+		return nil
 	}
+	var roots []string
 	for _, d := range parseWindowsVolumeRoots(volumes) {
-		if _, err := os.Stat(d); err != nil {
-			continue
+		if info, statErr := os.Stat(d); statErr == nil && info.IsDir() {
+			roots = append(roots, d)
+		} else {
+			addFinding(r, "INFO", "Volume unavailable", d, "Could not inspect fixed volume: "+fmt.Sprint(statErr), "scan limitation")
+			r.TraversalComplete = false
 		}
-		_ = filepath.WalkDir(d, func(path string, ent os.DirEntry, err error) error {
+	}
+	return unique(roots)
+}
+
+func discoverGameLibraryRoots(r *Report) []string {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	var roots []string
+	for _, d := range mountedFixedVolumeRoots(r) {
+		walkErr := filepath.WalkDir(d, func(path string, ent os.DirEntry, err error) error {
 			if err != nil {
+				r.TraversalComplete = false
+				addFinding(r, "INFO", "Game library discovery entry unavailable", path, "Could not inspect directory during game-library discovery: "+err.Error(), "scan limitation")
 				return nil
 			}
 			if !ent.IsDir() {
@@ -1079,11 +1117,12 @@ func discoverGameLibraryRoots(r *Report) []string {
 			if depth >= 3 {
 				return filepath.SkipDir
 			}
-			if depth > 0 && skipDir(ent.Name()) {
-				return filepath.SkipDir
-			}
 			return nil
 		})
+		if walkErr != nil {
+			r.TraversalComplete = false
+			addFinding(r, "INFO", "Game library discovery failure", d, "Could not complete game-library discovery: "+walkErr.Error(), "scan limitation")
+		}
 	}
 	return unique(roots)
 }
@@ -1103,6 +1142,25 @@ func parseWindowsVolumeRoots(data []byte) []string {
 			continue
 		}
 		roots = append(roots, strings.TrimRight(volume, `\/`)+`\`)
+	}
+	return unique(roots)
+}
+
+func fullVolumeScanRoots(volumes, explicit []string) []string {
+	volumes = unique(volumes)
+	roots := append([]string{}, volumes...)
+	for _, candidate := range unique(explicit) {
+		covered := false
+		for _, volume := range volumes {
+			rel, err := filepath.Rel(volume, candidate)
+			if err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && !filepath.IsAbs(rel) {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			roots = append(roots, candidate)
+		}
 	}
 	return unique(roots)
 }
@@ -1134,7 +1192,7 @@ type scanScope struct {
 // buildScanScope centralizes the boundary between strict explicit-root scans
 // and the normal host-wide discovery mode. The strict branch must return
 // before any registry, launcher, profile, volume, Steam, or Epic discovery.
-func buildScanScope(rootOnly bool, explicitRoots []string, r *Report) scanScope {
+func buildScanScope(rootOnly, full bool, explicitRoots []string, r *Report) scanScope {
 	if rootOnly {
 		roots := unique(explicitRoots)
 		return scanScope{gameRoots: roots, scanRoots: roots, collectSystemSnapshot: false}
@@ -1143,8 +1201,18 @@ func buildScanScope(rootOnly bool, explicitRoots []string, r *Report) scanScope 
 	gameRoots = append(gameRoots, steamRoots()...)
 	gameRoots = append(gameRoots, epicRoots()...)
 	gameRoots = append(gameRoots, discoverTencentRoots()...)
-	gameRoots = append(gameRoots, discoverGameLibraryRoots(r)...)
+	if !full {
+		gameRoots = append(gameRoots, discoverGameLibraryRoots(r)...)
+	}
 	gameRoots = append(gameRoots, explicitRoots...)
+	if full {
+		volumes := mountedFixedVolumeRoots(r)
+		if len(volumes) == 0 {
+			r.TraversalComplete = false
+			addFinding(r, "INFO", "Full-volume scan unavailable", "", "No mounted fixed volumes could be enumerated; use explicit -root paths", "scan limitation")
+		}
+		return scanScope{gameRoots: unique(gameRoots), scanRoots: fullVolumeScanRoots(volumes, explicitRoots), collectSystemSnapshot: true}
+	}
 	scanRoots := append([]string{}, gameRoots...)
 	scanRoots = append(scanRoots, collectLauncherRoots()...)
 	// Inspect only K2F-named temporary artifacts, not the user's entire TEMP tree.
@@ -1154,7 +1222,7 @@ func buildScanScope(rootOnly bool, explicitRoots []string, r *Report) scanScope 
 
 func main() {
 	showVersion := flag.Bool("version", false, "Print scanner version and exit")
-	full := flag.Bool("full", false, "Raise scan budget; still skips Windows/system trees")
+	full := flag.Bool("full", false, "Scan every mounted fixed volume without file-count or directory-name exclusions; may take many hours")
 	deep := flag.Bool("deep", false, "Deep read-only content analysis of every file in selected roots; hashes files and inspects embedded indicators")
 	noLogs := flag.Bool("no-logs", false, "Disable enhanced log discovery/context analysis; general file IOC scanning remains enabled")
 	systemOnly := flag.Bool("system-only", false, "Collect Windows persistence/process/network snapshot without walking game files")
@@ -1183,16 +1251,7 @@ func main() {
 		}
 	}
 	lang := normalizeLanguage(*language)
-	limit := 100000
-	perRootLimit := 25000
-	if *full {
-		limit = 500000
-	}
-	if *deep {
-		limit = 1000000
-		perRootLimit = 250000
-	}
-	cfg := config{full: *full, deep: *deep, logForensics: !*noLogs, maxFiles: limit, maxPerRoot: perRootLimit, maxBytes: 512 << 20, roots: extra, rootOnly: *rootOnly}
+	cfg := config{deep: *deep, logForensics: !*noLogs, maxBytes: 512 << 20}
 	mode := "read-only"
 	if *deep {
 		mode = "read-only deep content analysis"
@@ -1205,16 +1264,20 @@ func main() {
 	}
 	if *rootOnly {
 		mode += " (strict explicit-root scope)"
+	} else if *full {
+		mode += " (all mounted fixed volumes)"
 	}
-	r := &Report{Version: version, Generated: time.Now().Format(time.RFC3339), Language: lang, Computer: os.Getenv("COMPUTERNAME"), User: os.Getenv("USERNAME"), Mode: mode, ScanRoots: unique(extra), Games: []Game{}, Findings: []Finding{}, Limitations: []string{
+	r := &Report{Version: version, Generated: time.Now().Format(time.RFC3339), Language: lang, Computer: os.Getenv("COMPUTERNAME"), User: os.Getenv("USERNAME"), Mode: mode, ScanRoots: unique(extra), TraversalComplete: true, Games: []Game{}, Findings: []Finding{}, Limitations: []string{
 		"This scanner treats Tencent game / launcher exposure as a broad hunting hypothesis, not a proven blanket compromise. K2F-specific indicators remain attributed to the NIKKE / Level Infinite incident unless independent samples establish wider reuse.",
 		"Tencent portfolio inventory is best-effort: uninstall metadata, Steam libraries and Epic manifests do not cover every launcher, portable install, region or custom path.",
+		"Use -full to scan all mounted fixed volumes; without it, only automatically discovered game/launcher roots and explicit -root paths are scanned.",
+		"Filesystem symbolic links/reparse points are not followed to prevent scope escape; every encountered link is counted and reported. Inaccessible entries are reported and the scan continues elsewhere.",
 		"Raw LevelDB/Code Cache scans do not decompress Chromium records; a no-hit result does not exclude compressed or deleted evidence.",
-		"Deep mode hashes and inspects file contents without executing them; encrypted, compressed, packed, sparse, inaccessible, and oversized files may still require specialist tooling.",
+		"Content inspection uses bounded per-file reads: selected static string/IOC checks up to 64 MiB, deep analysis up to 512 MiB, and text-log parsing up to 16 MiB. Oversized, unreadable, binary/non-text, or unsupported content is explicitly counted as incomplete; encrypted/compressed/packed content is not unpacked.",
 		"This is IOC hunting, not antivirus, EDR, memory forensics or proof that a device is clean. Historical IOC hits may indicate past contact, not current execution.",
 		"No live C2, domain, IP, URL or third-party service is contacted. No files, registry keys, firewall, hosts or Defender settings are changed.",
 	}}
-	scope := buildScanScope(*rootOnly, extra, r)
+	scope := buildScanScope(*rootOnly, *full, extra, r)
 	gameRoots := scope.gameRoots
 	scan := scope.scanRoots
 	r.ScanRoots = append([]string{}, scan...)

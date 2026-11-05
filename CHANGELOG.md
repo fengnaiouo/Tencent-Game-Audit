@@ -2,6 +2,19 @@
 
 All notable changes to Tencent Game Audit are documented here.
 
+## [0.9.0] - 2026-11-05
+
+### Fixed
+- Removed global and per-root file-count cutoffs from filesystem traversal and Log Forensics; scanning no longer stops at 100,000 / 1,000,000 files or 20,000 log candidates.
+- Removed directory-name pruning (`Windows`, `packages`, `node_modules`, `.git`, and similar) from selected-root traversal.
+- Added `-full` volume mode to scan every mounted fixed volume rather than only automatically discovered game and launcher roots. `-root-only` remains a strict explicit-root boundary and takes precedence.
+- Directory/file access failures are recorded while traversal continues through other accessible entries. Symbolic links/reparse points remain un-followed and are counted as explicit scope exclusions.
+- Reports now include filesystem entries, directories, unreadable entries, skipped reparse points, traversal completion, and incomplete content-analysis counts.
+
+### Coverage notes
+- File-count limits are removed, but safe per-file content limits remain: deep analysis is capped at 512 MiB per file, selected static string/IOC inspection at 64 MiB, and text-log parsing at 16 MiB. These cases are explicitly counted as incomplete content analysis and are not described as fully analyzed.
+- Full-volume mode can take many hours and still does not follow reparse points or decrypt compressed/encrypted content.
+
 ## [0.8.0] - 2026-11-05
 
 ### Fixed

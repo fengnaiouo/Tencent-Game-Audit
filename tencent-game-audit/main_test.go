@@ -16,7 +16,7 @@ func TestBuildScanScopeRootOnlyUsesOnlyExplicitRoots(t *testing.T) {
 	first := filepath.Join(t.TempDir(), "Delta Force")
 	second := filepath.Join(t.TempDir(), "WeGame")
 	r := &Report{}
-	scope := buildScanScope(true, []string{first, second, first}, r)
+	scope := buildScanScope(true, true, []string{first, second, first}, r)
 	if scope.collectSystemSnapshot {
 		t.Fatal("strict root-only scope must not collect a global system snapshot")
 	}
@@ -70,7 +70,7 @@ func TestRootOnlyScanIncludesNormallySkippedPackagesDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &Report{}
-	scanRoots([]string{root}, config{maxFiles: 10, maxPerRoot: 10, maxBytes: 1024, rootOnly: true}, r)
+	scanRoots([]string{root}, config{maxBytes: 1024}, r)
 	if r.ScannedFiles != 1 {
 		t.Fatalf("strict root-only scan should include packages subtree, scanned=%d findings=%+v", r.ScannedFiles, r.Findings)
 	}
@@ -126,6 +126,16 @@ func TestParseWindowsVolumeRoots(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFullVolumeScanRootsAvoidsNestedDuplicateRoots(t *testing.T) {
+	volume := t.TempDir()
+	nested := filepath.Join(volume, "Games", "Delta Force")
+	outside := t.TempDir()
+	got := fullVolumeScanRoots([]string{volume}, []string{nested, outside, nested})
+	if len(got) != 2 || !strings.EqualFold(got[0], volume) || !strings.EqualFold(got[1], outside) {
+		t.Fatalf("full-volume roots should cover nested explicit roots without duplicate walks: %#v", got)
 	}
 }
 
@@ -647,7 +657,7 @@ func TestChromiumTransportSecurityHashedIOC(t *testing.T) {
 	}
 }
 
-func TestScanRootsHonorsGlobalAndPerRootLimits(t *testing.T) {
+func TestScanRootsDoesNotTruncateAtFormerGlobalOrPerRootLimits(t *testing.T) {
 	root := t.TempDir()
 	for i := 0; i < 5; i++ {
 		name := filepath.Join(root, string(rune('a'+i))+".txt")
@@ -655,10 +665,10 @@ func TestScanRootsHonorsGlobalAndPerRootLimits(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	r := &Report{}
-	scanRoots([]string{root}, config{maxFiles: 3, maxPerRoot: 2, maxBytes: 1024}, r)
-	if r.ScannedFiles != 2 {
-		t.Fatalf("per-root limit scanned %d files; want 2", r.ScannedFiles)
+	r := &Report{TraversalComplete: true}
+	scanRoots([]string{root}, config{maxBytes: 1024}, r)
+	if r.ScannedFiles != 5 {
+		t.Fatalf("scanner truncated a root: scanned %d files; want all 5", r.ScannedFiles)
 	}
 
 	second := t.TempDir()
@@ -668,22 +678,50 @@ func TestScanRootsHonorsGlobalAndPerRootLimits(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	r = &Report{}
-	scanRoots([]string{root, second}, config{maxFiles: 3, maxPerRoot: 10, maxBytes: 1024}, r)
-	if r.ScannedFiles != 3 {
-		t.Fatalf("global limit scanned %d files; want exactly 3", r.ScannedFiles)
+	r = &Report{TraversalComplete: true}
+	scanRoots([]string{root, second}, config{maxBytes: 1024}, r)
+	if r.ScannedFiles != 9 {
+		t.Fatalf("scanner truncated combined roots: scanned %d files; want all 9", r.ScannedFiles)
+	}
+	if !r.TraversalComplete || r.EntriesVisited < r.ScannedFiles || r.DirectoriesVisited < 2 {
+		t.Fatalf("expected complete traversal accounting, got %+v", r)
+	}
+	if r.SkippedFiles != 0 {
+		t.Fatalf("unexpected skipped files: %+v", r.Findings)
+	}
+}
+
+func TestScanRootsDoesNotPrunePreviouslyExcludedDirectoryNames(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"packages", "node_modules", ".git", "Windows", "WindowsApps", "ProgramData", "Users"} {
+		path := filepath.Join(root, dir)
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(path, "payload.bin"), []byte("test"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := &Report{TraversalComplete: true}
+	scanRoots([]string{root}, config{maxBytes: 1024}, r)
+	if r.ScannedFiles != 7 || !r.TraversalComplete {
+		t.Fatalf("expected all files under formerly pruned directories to be scanned, got %+v", r)
 	}
 }
 
 func TestScanRootsReportsUnavailableRoot(t *testing.T) {
 	r := &Report{}
 	missing := filepath.Join(t.TempDir(), "does-not-exist")
-	scanRoots([]string{missing}, config{maxFiles: 10, maxPerRoot: 10, maxBytes: 1024}, r)
+	r.TraversalComplete = true
+	scanRoots([]string{missing}, config{maxBytes: 1024}, r)
 	if r.SkippedFiles != 1 {
 		t.Fatalf("unavailable root should increment skipped count, got %d", r.SkippedFiles)
 	}
 	if len(r.Findings) != 1 || r.Findings[0].Category != "Scan root unavailable" {
 		t.Fatalf("unavailable root should be visible in findings, got %+v", r.Findings)
+	}
+	if r.TraversalComplete || r.UnreadableEntries != 1 {
+		t.Fatalf("unavailable root must mark traversal incomplete: %+v", r)
 	}
 }
 
@@ -800,7 +838,7 @@ func TestWriteReportRejectsUnknownFormat(t *testing.T) {
 }
 
 func TestReportsClearlyMarkUncollectedSystemSnapshotAndScanRoots(t *testing.T) {
-	report := &Report{Version: "0.7.0", Mode: "read-only deep content analysis (strict explicit-root scope)", ScanRoots: []string{`D:\Delta Force`}, SystemSnapshotCollected: false}
+	report := &Report{Version: "0.9.0", Mode: "read-only deep content analysis (strict explicit-root scope)", ScanRoots: []string{`D:\Delta Force`}, SystemSnapshotCollected: false, TraversalComplete: true, EntriesVisited: 12, DirectoriesVisited: 3, ContentAnalysisIncomplete: 2}
 	for _, format := range []string{"json", "txt", "html", "csv", "md"} {
 		t.Run(format, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "scope-report."+format)
@@ -814,6 +852,12 @@ func TestReportsClearlyMarkUncollectedSystemSnapshotAndScanRoots(t *testing.T) {
 			content := string(data)
 			if !strings.Contains(content, "Delta Force") {
 				t.Fatalf("%s report omitted explicit scan root: %s", format, content)
+			}
+			if !strings.Contains(content, "traversal_complete") && !strings.Contains(content, "Traversal complete") && !strings.Contains(content, "TraversalComplete") {
+				t.Fatalf("%s report omitted traversal completeness", format)
+			}
+			if !strings.Contains(content, "content_analysis_incomplete") && !strings.Contains(content, "Content analyses incomplete") && !strings.Contains(content, "ContentAnalysisIncomplete") {
+				t.Fatalf("%s report omitted incomplete content-analysis count", format)
 			}
 			if !strings.Contains(strings.ToLower(content), "system_snapshot_collected") && !strings.Contains(content, "Not collected") && !strings.Contains(content, "not collected") {
 				t.Fatalf("%s report did not disclose that the system snapshot was skipped", format)
