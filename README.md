@@ -43,7 +43,7 @@ A portable, read-only Windows security auditing tool for Tencent's game ecosyste
 # Include additional game libraries (repeat -root as needed)
 .\Tencent-Game-Audit.exe -root "D:\Games" -root "F:\WeGame"
 
-# Focused scan of only the supplied paths
+# Strictly scan only the supplied paths (no registry or global system snapshot)
 .\Tencent-Game-Audit.exe -root-only -root "D:\Games"
 
 # System persistence, process and network snapshot only
@@ -63,6 +63,8 @@ A portable, read-only Windows security auditing tool for Tencent's game ecosyste
 ```
 
 The scanner is read-only: it does not delete, quarantine, repair, terminate processes, change Defender/firewall/hosts/registry settings, or contact live C2 infrastructure. Reports are available as JSON, TXT, offline HTML, CSV, and Markdown through `-format` and `-out`; the legacy `-json` option remains supported. Reports can contain usernames, computer names, file paths, process command lines, and installed-game information; review and redact them before public sharing.
+
+`-root-only` is a strict isolation mode: only explicitly supplied `-root` paths are traversed. It skips uninstall-registry/game discovery and the global Windows system snapshot (persistence, services, scheduled tasks, processes, loaded modules, network connections, DNS, hosts, named pipes and Defender status). It does not follow symbolic links/reparse points, and it does scan ordinary subdirectories such as `packages`. Every report format records the actual scan roots and whether the system snapshot was collected. Use the standard mode or `-system-only` separately when host-wide checks are required.
 
 ## Detection coverage
 

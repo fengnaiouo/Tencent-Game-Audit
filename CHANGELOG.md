@@ -2,6 +2,17 @@
 
 All notable changes to Tencent Game Audit are documented here.
 
+## [0.7.0] - 2026-11-05
+
+### Fixed
+- Made `-root-only` a strict scan boundary: it no longer queries uninstall registry inventory or collects the global Windows system snapshot.
+- Strict root-only file and log traversal no longer applies broad auto-discovery directory exclusions such as `packages`; symbolic links/reparse points remain untraversed.
+- Reports now include actual scan roots and explicitly state whether the global system snapshot was collected.
+- Deep and ordinary content reads now use hard bounded reads to prevent file growth between metadata inspection and reading from exceeding configured memory limits.
+
+### Changed
+- Updated the scanner version to `0.7.0` and documented strict root-only behavior and its trade-off: host-wide persistence/process/network checks require a separate standard or system-only run.
+
 ## [0.6.0] - 2026-11-05
 
 ### Added
