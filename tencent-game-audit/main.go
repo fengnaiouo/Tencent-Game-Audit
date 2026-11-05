@@ -618,6 +618,8 @@ func scanRoots(roots []string, cfg config, r *Report) {
 		}
 		info, err := os.Stat(root)
 		if err != nil {
+			r.SkippedFiles++
+			addFinding(r, "INFO", "Scan root unavailable", root, "Could not inspect scan root: "+err.Error(), "scan limitation")
 			continue
 		}
 		if !info.IsDir() {
@@ -629,6 +631,7 @@ func scanRoots(roots []string, cfg config, r *Report) {
 		_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				r.SkippedFiles++
+				addFinding(r, "INFO", "Filesystem entry unavailable", path, "Could not inspect filesystem entry: "+err.Error(), "scan limitation")
 				return nil
 			}
 			if d.IsDir() {
@@ -788,12 +791,19 @@ func discoverTencentRoots() []string {
 
 var gameLibraryDirPattern = regexp.MustCompile(`(?i)^(games?|steam ?library|steamapps|wegame|tencent( games)?|riot games|level infinite|epic games|garena|txgameassistant|txgamedownload|netease games|nikke|delta force|arena breakout|honor of kings|pubg mobile|peacekeeper elite|valorant|league of legends|\x{738B}\x{8005}\x{8363}\x{8000}|\x{738B}\x{8005}\x{69AE}\x{8000}|\x{4E09}\x{89D2}\x{6D32}\x{884C}\x{52A8}|\x{4E09}\x{89D2}\x{6D32}\x{884C}\x{52D5}|\x{548C}\x{5E73}\x{7CBE}\x{82F1}|\x{82F1}\x{96C4}\x{8054}\x{76DF}|\x{82F1}\x{96C4}\x{806F}\x{76DF}|\x{7A7F}\x{8D8A}\x{706B}\x{7EBF}|\x{7A7F}\x{8D8A}\x{706B}\x{7DDA}|\x{65E0}\x{754F}\x{5951}\x{7EA6}|\x{7279}\x{6218}\x{82F1}\x{8C6A}|\x{9006}\x{6218}|\x{9006}\x{6230}|\x{706B}\x{5F71}\x{5FCD}\x{8005})$`)
 
-func discoverGameLibraryRoots() []string {
+func discoverGameLibraryRoots(r *Report) []string {
 	if runtime.GOOS != "windows" {
 		return nil
 	}
 	var roots []string
-	for _, d := range []string{"C:\\", "D:\\", "E:\\", "F:\\", "G:\\", "H:\\", "I:\\", "J:\\", "K:\\", "L:\\", "M:\\", "N:\\", "O:\\", "P:\\", "Q:\\", "R:\\", "S:\\", "T:\\", "U:\\", "V:\\", "W:\\", "X:\\", "Y:\\", "Z:\\"} {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	volumes, err := exec.CommandContext(ctx, "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", `Get-CimInstance Win32_LogicalDisk | Where-Object {$_.DriveType -eq 3 -and $_.DeviceID} | Select-Object -ExpandProperty DeviceID | ConvertTo-Json -Compress`).Output()
+	if err != nil {
+		addFinding(r, "INFO", "Volume discovery unavailable", "", "Could not enumerate mounted fixed volumes: "+err.Error(), "scan limitation")
+		return roots
+	}
+	for _, d := range parseWindowsVolumeRoots(volumes) {
 		if _, err := os.Stat(d); err != nil {
 			continue
 		}
@@ -828,6 +838,25 @@ func discoverGameLibraryRoots() []string {
 	return unique(roots)
 }
 
+func parseWindowsVolumeRoots(data []byte) []string {
+	var volumes []string
+	if json.Unmarshal(data, &volumes) != nil {
+		var one string
+		if json.Unmarshal(data, &one) == nil && one != "" {
+			volumes = append(volumes, one)
+		}
+	}
+	var roots []string
+	for _, volume := range volumes {
+		volume = strings.TrimSpace(volume)
+		if volume == "" {
+			continue
+		}
+		roots = append(roots, strings.TrimRight(volume, `\/`)+`\`)
+	}
+	return unique(roots)
+}
+
 func collectTempArtifacts() []string {
 	var roots []string
 	temps := []string{os.Getenv("TEMP")}
@@ -852,6 +881,8 @@ func main() {
 	systemOnly := flag.Bool("system-only", false, "Collect Windows persistence/process/network snapshot without walking game files")
 	rootOnly := flag.Bool("root-only", false, "Scan only folders supplied with -root; skip automatic game/browser discovery")
 	jsonPath := flag.String("json", "", "Write a JSON report to this path (default: timestamped report beside executable)")
+	reportFormat := flag.String("format", "json", "Report format: json, txt, html, csv, or md")
+	reportPath := flag.String("out", "", "Report output path (extension is not used to infer format)")
 	language := flag.String("lang", "auto", "Summary language: auto, en, zh-Hant, zh-Hans, ja, ko, pt-BR, fr, de, es, id, th, vi, ru, pl, tr, it")
 	var extra multiFlag
 	flag.Var(&extra, "root", "Add a game or launcher folder to scan (repeatable)")
@@ -859,6 +890,18 @@ func main() {
 	if *showVersion {
 		fmt.Println("Tencent Game Audit v" + version)
 		return
+	}
+	if *jsonPath != "" {
+		*reportFormat = "json"
+	} else {
+		*reportFormat = strings.ToLower(strings.TrimSpace(*reportFormat))
+		if *reportFormat == "markdown" {
+			*reportFormat = "md"
+		}
+		if *reportFormat != "json" && *reportFormat != "txt" && *reportFormat != "html" && *reportFormat != "csv" && *reportFormat != "md" {
+			fmt.Fprintf(os.Stderr, "unsupported report format %q (choose json, txt, html, csv, or md)\n", *reportFormat)
+			os.Exit(2)
+		}
 	}
 	lang := normalizeLanguage(*language)
 	limit := 100000
@@ -886,7 +929,7 @@ func main() {
 		gameRoots = append(gameRoots, steamRoots()...)
 		gameRoots = append(gameRoots, epicRoots()...)
 		gameRoots = append(gameRoots, discoverTencentRoots()...)
-		gameRoots = append(gameRoots, discoverGameLibraryRoots()...)
+		gameRoots = append(gameRoots, discoverGameLibraryRoots(r)...)
 		gameRoots = append(gameRoots, extra...)
 	}
 	for _, root := range unique(gameRoots) {
@@ -915,16 +958,16 @@ func main() {
 		}
 		return r.Findings[i].Path < r.Findings[j].Path
 	})
-	if *jsonPath == "" {
+	if *jsonPath != "" {
+		*reportFormat = "json"
+		*reportPath = *jsonPath
+	}
+	if *reportPath == "" {
 		exe, _ := os.Executable()
-		*jsonPath = filepath.Join(filepath.Dir(exe), "Tencent-Game-Audit-"+time.Now().Format("20060102-150405")+".json")
+		ext := strings.ToLower(strings.TrimSpace(*reportFormat))
+		*reportPath = filepath.Join(filepath.Dir(exe), "Tencent-Game-Audit-"+time.Now().Format("20060102-150405")+"."+ext)
 	}
-	b, err := json.MarshalIndent(r, "", "  ")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
-	}
-	if err = os.WriteFile(*jsonPath, append(b, '\n'), 0600); err != nil {
+	if err := writeReport(*reportPath, *reportFormat, r); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
@@ -953,7 +996,7 @@ func main() {
 	for _, f := range r.Findings {
 		fmt.Printf("[%s] %s | %s | %s\n", f.Severity, f.Category, f.Path, f.Evidence)
 	}
-	fmt.Println(label[5]+":", *jsonPath)
+	fmt.Println(label[5]+":", *reportPath)
 }
 
 func normalizeLanguage(requested string) string {

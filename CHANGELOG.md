@@ -2,6 +2,17 @@
 
 All notable changes to Tencent Game Audit are documented here.
 
+## Unreleased
+
+### Added
+- Shared-model TXT, offline HTML, CSV, and Markdown report output alongside JSON.
+- `-format` and `-out` options while retaining the legacy `-json` option.
+- HTML output escaping, CSV spreadsheet-formula neutralization, Unicode report coverage, and report-format tests.
+- Explicit informational findings for inaccessible scan roots and filesystem entries instead of silently skipping them.
+- Dynamic fixed-volume discovery through Windows logical-disk metadata rather than a hard-coded drive-letter list.
+- Mounted-volume discovery is time-bounded and reports CIM/PowerShell failures as scan limitations.
+- System snapshot collection failures surfaced as informational scan limitations.
+
 ## [0.2.0] - 2026-11-05
 
 ### Added

@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/csv"
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +35,31 @@ func TestClassifyRegionalTitleAliases(t *testing.T) {
 		if !gameLibraryDirPattern.MatchString(directory) {
 			t.Errorf("regional game directory was not discovered: %q", directory)
 		}
+	}
+}
+
+func TestParseWindowsVolumeRoots(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data string
+		want int
+	}{
+		{name: "multiple fixed volumes", data: `["C:","D:","E:"]`, want: 3},
+		{name: "single volume", data: `"Q:"`, want: 1},
+		{name: "empty volume list", data: `[]`, want: 0},
+		{name: "malformed response", data: `not-json`, want: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseWindowsVolumeRoots([]byte(tc.data))
+			if len(got) != tc.want {
+				t.Fatalf("parseWindowsVolumeRoots() returned %d roots, want %d: %#v", len(got), tc.want, got)
+			}
+			for _, root := range got {
+				if !strings.HasSuffix(root, `\`) {
+					t.Errorf("volume root lacks trailing separator: %q", root)
+				}
+			}
+		})
 	}
 }
 
@@ -209,6 +237,18 @@ func TestScanRootsHonorsGlobalAndPerRootLimits(t *testing.T) {
 	}
 }
 
+func TestScanRootsReportsUnavailableRoot(t *testing.T) {
+	r := &Report{}
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	scanRoots([]string{missing}, config{maxFiles: 10, maxPerRoot: 10, maxBytes: 1024}, r)
+	if r.SkippedFiles != 1 {
+		t.Fatalf("unavailable root should increment skipped count, got %d", r.SkippedFiles)
+	}
+	if len(r.Findings) != 1 || r.Findings[0].Category != "Scan root unavailable" {
+		t.Fatalf("unavailable root should be visible in findings, got %+v", r.Findings)
+	}
+}
+
 func TestKnownNetworkIOCIP(t *testing.T) {
 	for _, ip := range []string{"89.127.233.127", "89.126.250.172"} {
 		if !isKnownNetworkIOCIP(ip) {
@@ -233,10 +273,96 @@ func TestSystemSnapshotAddsActiveTCPIOCAsCritical(t *testing.T) {
 	}
 }
 
+func TestSystemSnapshotCollectionErrorsBecomeFindings(t *testing.T) {
+	r := &Report{}
+	SystemSnapshot{CollectionErrors: []string{"PowerShell snapshot timed out"}}.addFindings(r)
+	if len(r.Findings) != 1 || r.Findings[0].Severity != "INFO" || r.Findings[0].Category != "System snapshot collection limitation" {
+		t.Fatalf("collection error should be visible as a limitation, got %+v", r.Findings)
+	}
+}
+
 func TestLoadedK2FPersistenceModuleIsCritical(t *testing.T) {
 	r := &Report{}
 	SystemSnapshot{Processes: []ProcessItem{{PID: 12, Name: "chrome", Path: `C:\\Users\\Test\\AppData\\Local\\Google\\Chrome\\User Data\\PlatformExperienceHelper\\platform_experience_helper.dll`, Command: "Loaded module: platform_experience_helper.dll", Confidence: "high; documented K2F persistence module loaded"}}}.addFindings(r)
 	if len(r.Findings) != 1 || r.Findings[0].Severity != "CRITICAL" {
 		t.Fatalf("expected loaded K2F module to be critical, got %+v", r.Findings)
+	}
+}
+
+func TestWriteReportFormatsAndEscaping(t *testing.T) {
+	report := &Report{
+		Version: "0.2.0", Generated: "2026-11-05T12:00:00+08:00", Language: "zh-Hant", Mode: "read-only",
+		Computer: "測試主機", User: "測試使用者", ScannedFiles: 2, SkippedFiles: 1,
+		Games:       []Game{{Title: "測試遊戲", InstallPath: "C:\\Games\\測試", Source: "fixture", Relation: "unclassified"}},
+		Findings:    []Finding{{Severity: "REVIEW", Category: "HTML injection", Path: "=HYPERLINK(\"https://invalid\")", Evidence: "</td><script>alert(1)</script> | 證據", Confidence: "low", Signer: "Example & Co"}},
+		Limitations: []string{"無法讀取的項目不代表安全"},
+	}
+
+	for _, format := range []string{"json", "txt", "html", "csv", "md"} {
+		t.Run(format, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "report."+format)
+			if err := writeReport(path, format, report); err != nil {
+				t.Fatalf("writeReport(%s): %v", format, err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(data) == 0 {
+				t.Fatal("report is empty")
+			}
+			if !strings.Contains(string(data), "network_ioc_hits") {
+				t.Fatal("report omitted the system snapshot")
+			}
+			if format == "json" {
+				var decoded Report
+				if err := json.Unmarshal(data, &decoded); err != nil || len(decoded.Findings) != 1 {
+					t.Fatalf("invalid JSON report: %v", err)
+				}
+			}
+			if format == "html" {
+				if strings.Contains(string(data), "<script>alert(1)</script>") || !strings.Contains(string(data), "&lt;script&gt;") {
+					t.Fatal("HTML report did not escape untrusted evidence")
+				}
+			}
+			if format == "csv" {
+				rows, err := csv.NewReader(strings.NewReader(string(data))).ReadAll()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(rows) != 5 || rows[4][14] != "'=HYPERLINK(\"https://invalid\")" {
+					t.Fatalf("CSV formula neutralization failed: %#v", rows)
+				}
+			}
+			if format == "md" && (!strings.Contains(string(data), "測試遊戲") || !strings.Contains(string(data), "\\|")) {
+				t.Fatal("Markdown report lost Unicode or failed to escape table delimiters")
+			}
+		})
+	}
+}
+
+func TestWriteReportRejectsUnknownFormat(t *testing.T) {
+	err := writeReport(filepath.Join(t.TempDir(), "report.bin"), "exe", &Report{})
+	if err == nil || !strings.Contains(err.Error(), "unsupported report format") {
+		t.Fatalf("expected unsupported-format error, got %v", err)
+	}
+}
+
+func TestCSVReportKeepsFixedColumnCount(t *testing.T) {
+	data, err := renderCSVReport(&Report{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := csv.NewReader(strings.NewReader(string(data)))
+	header, err := r.Read()
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := r.Read()
+	if err != nil && err != io.EOF {
+		t.Fatal(err)
+	}
+	if err == nil && len(row) != len(header) {
+		t.Fatalf("CSV summary has %d columns; header has %d", len(row), len(header))
 	}
 }

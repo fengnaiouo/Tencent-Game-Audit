@@ -5,7 +5,7 @@
 ## 全球／地區適配
 
 - 適用中國大陸、台灣、香港、日本、韓國、東南亞、歐洲、美洲等地區的 Windows 遊戲環境。
-- 不綁定國家、時區、小數格式或固定磁碟代號；使用系統環境變數、登錄檔、啟動器清單、Steam/Epic 遊戲庫及使用者提供的路徑。
+- 不綁定國家、時區、小數格式或固定磁碟代號；使用系統環境變數、Windows 掛載磁碟資訊、登錄檔、啟動器清單、Steam/Epic 遊戲庫及使用者提供的路徑。
 - 支援部分繁體中文、簡體中文及國際遊戲名稱別名。地區版本、代理商及安裝位置仍可能不同，請用 `-root` 補充自訂路徑。
 - `-lang auto|en|zh-Hant|zh-Hans|ja|ko|pt-BR|fr|de|es|id|th|vi|ru|pl|tr|it` 可選擇主控台摘要語言；`auto` 會讀取系統語系。摘要標籤會翻譯，詳細 finding 與 JSON 欄位保留英文，方便跨國自動化與 SIEM 整合。
 - IOC 比對不依賴使用者所在國家。騰訊投資關係只作為盤點線索，不代表遊戲必然由騰訊控制或已遭入侵。
@@ -20,7 +20,12 @@
 .\Tencent-Game-Audit.exe -system-only
 .\Tencent-Game-Audit.exe -full
 .\Tencent-Game-Audit.exe -json "$env:TEMP\Tencent-Game-Audit.json"
+.\Tencent-Game-Audit.exe -format html -out "$env:TEMP\Tencent-Game-Audit.html"
+.\Tencent-Game-Audit.exe -format csv -out "$env:TEMP\Tencent-Game-Audit.csv"
+.\Tencent-Game-Audit.exe -format md -out "$env:TEMP\Tencent-Game-Audit.md"
 ```
+
+Supported report formats are `json` (default), `txt`, `html`, `csv`, and `md`. Use `-format` with `-out` to select a format and destination. The legacy `-json` option remains supported and always writes JSON. All formats use the same report model; HTML is offline and escapes untrusted content, while CSV neutralizes spreadsheet formula prefixes.
 
 建議以系統管理員身分執行，以取得較完整的系統資訊；一般權限仍可執行，但部分資料可能無法讀取。工具不需要安裝 Go、Rust、Python，也不需要連線網路。
 
@@ -29,7 +34,7 @@
 - 預設唯讀：不刪除、不隔離、不修復、不終止程序、不修改 Defender、防火牆、hosts 或登錄檔設定。涵蓋 Chrome、Edge、Brave、Vivaldi、Opera、Opera GX、Chromium 的已知持久化目錄及部分瀏覽器快取紀錄。
 - `CRITICAL` 代表命中高信心的特定 IOC，不代表每個 `WARNING` 或 `REVIEW` 都是感染。
 - NIKKE/K2F IOC 仍歸屬於目前有證據的事件範圍；不會因為遊戲與騰訊有投資或發行關係，就宣稱該遊戲已中毒。
-- JSON 報告可能包含電腦名稱、使用者名稱、檔案路徑、程序命令列及遊戲清單。公開前請先檢查並遮蔽個資。
+- 所有報告格式都可能包含電腦名稱、使用者名稱、檔案路徑、程序命令列及遊戲清單。公開前請先檢查並遮蔽個資。
 - 本工具是 IOC hunting，不是防毒軟體、EDR 或完整記憶體鑑識；沒有命中不等於保證安全。
 
 ## 建置與 Git

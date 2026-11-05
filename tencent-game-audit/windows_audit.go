@@ -127,6 +127,9 @@ func encodeUTF16LE(s string) []byte {
 }
 
 func (s SystemSnapshot) addFindings(r *Report) {
+	for _, x := range s.CollectionErrors {
+		addFinding(r, "INFO", "System snapshot collection limitation", "", x, "scan limitation")
+	}
 	for _, x := range s.RunEntries {
 		addFinding(r, "REVIEW", "Suspicious Run key", x.Location, x.Name+" = "+x.Command, x.Confidence)
 	}

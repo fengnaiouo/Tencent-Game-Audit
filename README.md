@@ -14,7 +14,7 @@ A portable, read-only Windows security auditing tool for Tencent's game ecosyste
 ## Global and regional support
 
 - Designed for Windows installations in mainland China, Taiwan, Hong Kong, Japan, Korea, Southeast Asia, Europe, the Americas, and other regions.
-- Does not hard-code a country, timezone, decimal format, or installation drive. Uses Windows environment variables, registry metadata, launcher manifests, Steam libraries, Epic manifests, and optional user-supplied paths.
+- Does not hard-code a country, timezone, decimal format, or installation drive. Uses Windows environment variables, mounted fixed-volume metadata, registry metadata, launcher manifests, Steam libraries, Epic manifests, and optional user-supplied paths.
 - Recognizes selected Traditional Chinese and Simplified Chinese game-title and publisher aliases alongside international titles.
 - JSON field names remain stable English identifiers for automation and SIEM ingestion. Timestamps use RFC 3339 with the host's local UTC offset.
 - Console language can be selected with `-lang auto|en|zh-Hant|zh-Hans|ja|ko|pt-BR|fr|de|es|id|th|vi|ru|pl|tr|it`. Unsupported locales fall back to English. `auto` uses locale environment variables or the Windows user UI culture and otherwise falls back to English; explicitly set `-lang` for predictable output. Summary labels are localized; finding details and JSON identifiers remain English for stable triage and automation.
@@ -55,9 +55,14 @@ A portable, read-only Windows security auditing tool for Tencent's game ecosyste
 # Choose report/console locale and a private report destination
 .\Tencent-Game-Audit.exe -lang en -json "$env:TEMP\Tencent-Game-Audit.json"
 .\Tencent-Game-Audit.exe -lang zh-Hant -json "$env:TEMP\Tencent-Game-Audit.json"
+
+# Human-readable reports (JSON remains the default)
+.\Tencent-Game-Audit.exe -format html -out "$env:TEMP\Tencent-Game-Audit.html"
+.\Tencent-Game-Audit.exe -format csv -out "$env:TEMP\Tencent-Game-Audit.csv"
+.\Tencent-Game-Audit.exe -format md -out "$env:TEMP\Tencent-Game-Audit.md"
 ```
 
-The scanner is read-only: it does not delete, quarantine, repair, terminate processes, change Defender/firewall/hosts/registry settings, or contact live C2 infrastructure. It writes a JSON report. Reports can contain usernames, computer names, file paths, process command lines, and installed-game information; review and redact them before public sharing.
+The scanner is read-only: it does not delete, quarantine, repair, terminate processes, change Defender/firewall/hosts/registry settings, or contact live C2 infrastructure. Reports are available as JSON, TXT, offline HTML, CSV, and Markdown through `-format` and `-out`; the legacy `-json` option remains supported. Reports can contain usernames, computer names, file paths, process command lines, and installed-game information; review and redact them before public sharing.
 
 ## Detection coverage
 
@@ -87,6 +92,7 @@ The script runs uncached Go tests, `go vet`, builds Windows amd64 with CGO disab
 
 - `tencent-game-audit/`: Go source, tests, embedded IOC CSV, and portable build script.
 - `docs/`: detection source provenance and technical notes.
+- `docs/PROJECT-SESSION-LOG.md`: append-only project conversation summaries, tool activity, and validation history (not a verbatim account-wide transcript).
 - `README.md`: project overview and quick start.
 
 ## Contributing and responsible disclosure
