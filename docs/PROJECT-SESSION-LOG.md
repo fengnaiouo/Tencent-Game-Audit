@@ -356,5 +356,13 @@ _Append dated results here. Do not rewrite earlier entries; correct mistakes wit
 - Pre-existing untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain untouched and excluded from staging.
 
 **Publication pending:** feature PR/CI, merge, tag, and release verification.
+
+**Publication completed:**
+- Feature commit `42532fe` was pushed on `feat/unbounded-complete-scan-coverage`; [PR #16](https://github.com/fengnaiouo/Tencent-Game-Audit/pull/16) passed required CI run [42038528914](https://github.com/fengnaiouo/Tencent-Game-Audit/actions/runs/42038528914) (tests, vet, Windows x64 build) and merged at `2026-11-05T13:46:01Z`.
+- Merge commit: `05b1c74416d9aeeb718b79a88f492468ac96950f`; local `main` is synchronized with `origin/main`.
+- Annotated tag `v0.9.0` was pushed. Release workflow [42038698787](https://github.com/fengnaiouo/Tencent-Game-Audit/actions/runs/42038698787) completed successfully and published [GitHub Release v0.9.0](https://github.com/fengnaiouo/Tencent-Game-Audit/releases/tag/v0.9.0).
+- Release assets: `Tencent-Game-Audit-Windows-x64.zip` (1,712,219 bytes) and `SHA256SUMS.txt` (102 bytes). Downloaded the published ZIP, matched it against the published checksum file, extracted it, and ran the executable; it printed `Tencent Game Audit v0.9.0`. ZIP SHA-256: `527b687602f4c94514354e08225658424815bb37f69323b39e03b9bf5faffc0c`.
+- Release workflow emitted the existing non-blocking Node.js 20 deprecation annotation for upload/download artifact v4; packaging and release publication both succeeded.
+- Local `main` is clean relative to `origin/main`; only pre-existing unrelated untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain. No real game or fixed-volume scan was run and no server was started.
 - The repository build script was deliberately not used because it overwrites pre-existing root EXE and portable ZIP artifacts. The Windows build will be written to a unique OS temporary path instead.
 - Pre-existing untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain untouched and excluded from staging. No server or real game scan was started.
