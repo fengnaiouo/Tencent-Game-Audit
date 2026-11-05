@@ -2,6 +2,15 @@
 
 All notable changes to Tencent Game Audit are documented here.
 
+## [0.4.0] - 2026-11-05
+
+### Added
+- `-deep` read-only analysis mode hashes and inspects every file type within selected roots, with explicit per-root/global budgets and size/read-error reporting.
+- Deep findings include SHA-256 evidence; K2F-specific LuaJIT structure is distinguished from the generic LuaJIT bytecode header.
+
+### Changed
+- A generic `1B 4C 4A 01` LuaJIT header is now a low-confidence `REVIEW`, not a high-confidence malware `CRITICAL` finding.
+
 ## Unreleased
 
 ## [0.3.0] - 2026-11-05

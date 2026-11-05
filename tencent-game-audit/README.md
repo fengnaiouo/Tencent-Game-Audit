@@ -19,6 +19,7 @@
 .\Tencent-Game-Audit.exe -root-only -root "D:\Games"
 .\Tencent-Game-Audit.exe -system-only
 .\Tencent-Game-Audit.exe -full
+.\Tencent-Game-Audit.exe -deep -root-only -root "D:\Games" -format html -out "$env:TEMP\Tencent-Game-Audit-deep.html"
 .\Tencent-Game-Audit.exe -json "$env:TEMP\Tencent-Game-Audit.json"
 .\Tencent-Game-Audit.exe -format html -out "$env:TEMP\Tencent-Game-Audit.html"
 .\Tencent-Game-Audit.exe -format csv -out "$env:TEMP\Tencent-Game-Audit.csv"
@@ -28,6 +29,13 @@
 Supported report formats are `json` (default), `txt`, `html`, `csv`, and `md`. Use `-format` with `-out` to select a format and destination. The legacy `-json` option remains supported and always writes JSON. All formats use the same report model; HTML is offline and escapes untrusted content, while CSV neutralizes spreadsheet formula prefixes.
 
 建議以系統管理員身分執行，以取得較完整的系統資訊；一般權限仍可執行，但部分資料可能無法讀取。工具不需要安裝 Go、Rust、Python，也不需要連線網路。
+
+### 深度檔案檢測
+
+- `-deep` 會對所選掃描根目錄中的所有檔案（不限副檔名）進行唯讀內容檢查與 SHA-256 計算；不會執行、載入、解壓或修改檔案。
+- 建議先用 `-root-only -root "D:\\Delta Force" -deep` 限定單一遊戲目錄，再逐一掃描其他遊戲庫。深度模式上限為每個根目錄 250,000 個檔案、總計 1,000,000 個檔案；單檔分析上限 512 MiB，超限／讀取失敗會列入報告。
+- 通用 LuaJIT `1B 4C 4A 01` 只會列為低信心 `REVIEW`；只有額外命中 K2F 專屬結構或其他獨立 IOC，才會提高嚴重度。LuaJIT 標頭本身不是惡意程式證據。
+- 深度模式仍不會解密或解壓未知封裝、Chromium LevelDB 壓縮紀錄，也不是反編譯器或沙箱；必要時應以可信來源樣本比對 SHA-256，並使用隔離環境中的專業鑑識工具。
 
 ## 安全與判讀
 
