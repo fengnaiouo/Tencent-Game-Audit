@@ -162,3 +162,14 @@ _Append dated results here. Do not rewrite earlier entries; correct mistakes wit
 - Updated `.github/workflows/ci.yml` to `actions/checkout@v7` and `actions/setup-go@v7`; updated `.github/workflows/release.yml` to those versions and `softprops/action-gh-release@v3`. This triggers a fresh PR CI run; its result must be recorded after it completes.
 
 **Current state at this log entry:** PR #6 is published; `main` branch protection is active; the first CI run passed, and a workflow dependency update is pending a fresh CI run. No main-branch merge or GitHub Release is claimed until separately verified.
+
+### 2026-11-05 — Publication completed and protected main verified
+
+- `rtk gh run watch 42012097275 --repo fengnaiouo/Tencent-Game-Audit --exit-status`: second CI run passed after workflow action updates. `Test and vet`, `Test`, `Vet`, and `Build Windows x64` all completed successfully; no Node.js 20 deprecation warning appeared in this run.
+- `rtk gh pr checks 6 --repo fengnaiouo/Tencent-Game-Audit`: 1 required check passed, 0 failed.
+- Merged PR #6 with squash merge and branch deletion after required CI passed. Verified using `rtk gh pr view 6 --repo fengnaiouo/Tencent-Game-Audit --json state,mergedAt,mergeCommit,url`: state `MERGED`, merged at `2026-11-05T10:37:18Z`, squash commit `469f246daee7d92c0a570862a0e591f3b7dd48b9`.
+- Re-queried `rtk gh api repos/fengnaiouo/Tencent-Game-Audit/branches/main/protection`: confirmed strict required check `Test and vet`; PR required; 0 required approvals; administrators included; force pushes and deletion disabled; conversation resolution required.
+- Synchronized local repository with `rtk git fetch origin`, `rtk git switch main`, and `rtk git pull --ff-only origin main`. Final `rtk git status --short --branch` showed `main...origin/main` with no modified tracked files.
+- `rtk git log -4 --oneline --decorate` confirmed local `main` and `origin/main` both at `469f246` (`Complete audit report formats and project activity log (#6)`).
+- The two pre-existing unrelated untracked files `k2f-iocs-reference.csv` and `riju-x-post.jpg` remain untouched and excluded from GitHub.
+- This log update itself is being submitted separately through a follow-up documentation PR because the newly protected `main` branch now requires pull requests and CI. The main implementation is already merged; this follow-up only appends publication/verification history.
