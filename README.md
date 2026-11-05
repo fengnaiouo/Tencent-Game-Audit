@@ -71,6 +71,7 @@ The scanner is read-only: it does not delete, quarantine, repair, terminate proc
 - Game and launcher discovery from Windows uninstall metadata, Steam libraries, Epic manifests, Tencent/WeGame/Level Infinite/Riot paths, known game directory names, and explicit paths.
 - Known K2F hashes, strings, LuaJIT structure, launcher/cache traces, persistence identifiers, DNS/hosts/named-pipe and active TCP IOC matches.
 - Candidate executable, DLL, SYS and script content scanning; Authenticode status and signer enrichment for findings.
+- Generic LuaJIT markers are checked only as structurally plausible file-leading dumps, not as raw byte sequences anywhere inside PE machine code. Authenticode reporting separates unsigned files, untrusted roots, invalid signatures, and unknown verification errors.
 - Windows Run keys, services, scheduled tasks, Startup folders, per-user COM registrations, loaded browser persistence DLLs, Chromium cache/HSTS records, suspicious process command lines and established external TCP connections.
 - Selected cross-game loader API combinations are triage leads only. Game engines, anti-cheat, DRM, overlays and modding tools may legitimately use similar APIs.
 

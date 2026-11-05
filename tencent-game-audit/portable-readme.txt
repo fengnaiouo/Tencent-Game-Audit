@@ -1,4 +1,5 @@
 Tencent Game Audit — Global Edition
+Version 0.8.0
 
 Portable Windows x64 scanner. No Go/Rust/Python installation or network access is required.
 

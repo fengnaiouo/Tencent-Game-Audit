@@ -293,3 +293,28 @@ _Append dated results here. Do not rewrite earlier entries; correct mistakes wit
 - Release workflow reported a non-blocking Node.js 20 deprecation annotation for `actions/upload-artifact@v4`; both build/package and publish jobs succeeded. Track upgrading that action separately.
 - Re-verified `main` branch protection: required PR and `Test and vet` check, strict status checks, administrators included, force pushes/deletion disabled, and conversation resolution required.
 - Final `rtk git status --short --branch`: `main...origin/main`; only the three unrelated pre-existing untracked files remain. No server was started and no real game directory was scanned.
+
+### 2026-11-05 — LuaJIT byte-pattern false positive and Authenticode taxonomy (v0.8.0)
+
+**User authorization:** The user accepted the proposed scanner corrections after the read-only PE review of 134 candidate files identified an Epic Games Launcher x64 `LEA` instruction whose RIP-relative displacement happened to contain `1B 4C 4A 01`.
+
+**Implementation:**
+- Removed generic LuaJIT magic-byte IOC matching at arbitrary file offsets. The same byte sequence inside unrelated PE machine code is no longer treated as a LuaJIT marker.
+- Generic LuaJIT detection now requires the marker at byte offset zero, valid flag bits, and a bounded, non-zero first-prototype length. The dedicated K2F structure check remains separately scoped to a file-leading LuaJIT marker.
+- Authenticode enrichment now includes the provider's status message and normalizes outcomes to `Valid`, `NotSigned`, `UntrustedRoot`, `InvalidSignature`, `NotSupported`, or `UnknownError`. An untrusted root is distinguished from a cryptographically invalid signature; unsigned status is not elevated to malicious evidence.
+- Bumped the scanner to `0.8.0` and documented both behavior changes.
+
+**Regression coverage:**
+- Added a synthetic x64 `LEA` RIP-relative displacement case matching the previously observed Epic Launcher false-positive bytes.
+- Added positive/negative LuaJIT header structure tests and Authenticode status-mapping tests.
+
+**Validation:**
+- `rtk go test -count=1 ./...`: 67 tests passed.
+- `rtk go vet ./...`: passed.
+- `rtk git diff --check`: passed.
+- Cross-compiled a temporary Windows AMD64 executable with CGO disabled; `-version` printed `Tencent Game Audit v0.8.0`. Temporary executable was removed.
+- No actual game directory, candidate PE, or user report was rescanned or modified; tests used synthetic bytes only.
+
+**Publication pending:** PR/CI, merge, tag, and release verification remain to be completed.
+- The repository build script was deliberately not used because it overwrites pre-existing root EXE and portable ZIP artifacts. The Windows build will be written to a unique OS temporary path instead.
+- Pre-existing untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain untouched and excluded from staging. No server or real game scan was started.
