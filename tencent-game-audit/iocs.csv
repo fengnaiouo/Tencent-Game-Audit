@@ -1,0 +1,114 @@
+﻿type,value,description,confidence
+sha256,f3e93d049851d5c19552c7d9b73c8be4580dc9d549e8f65f9f0c357c1df9d252,Sample-A.dll loader,high
+sha1,06447f4b6bc5858d8a21b9c86908f823616318f8,Sample-A.dll loader,high
+md5,986267369c0d9cb6f0f9e7c937a1d627,Sample-A.dll loader,high
+sha256,cc0ad05bfe85940a6067b3a72c182d3953339129206634141926d5d0b35973ec,Sample-B.bundle LuaJIT payload,high
+sha1,dbffaa25de8c57c21d03d53de17d0ec20b3b1c58,Sample-B.bundle LuaJIT payload,high
+md5,f8baf640fbb940c4a65b64b70eb0b9e1,Sample-B.bundle LuaJIT payload,high
+host_pattern,insightjs[.]com,Apex domain re-registered for the K2F facade,high
+host_pattern,analytics[.]insightjs[.]com,K2F C2 ingest subdomain,high
+host_pattern,portal[.]insightjs[.]com,K2F operator portal with mTLS,medium
+host_pattern,docs[.]insightjs[.]com,K2F facade documentation subdomain,medium
+ip,89[.]127[.]233[.]127,Observed K2F infrastructure server IP,high
+string,the evaluated bundle is not on disk,Sample-A loader string,high
+string,no thread for the evaluated bundle,Sample-A loader string,high
+string,K2F_LUA_BUILD,K2F build marker,medium
+string,722b99d8d0e9,K2F Lua build marker value,high
+string,K2F_CREDENTIALW,K2F credential collection,high
+string,k2f_chan,K2F named pipe,high
+string,k2f-bcreds,K2F browser credential temp file,high
+string,k2f_screen,K2F screenshot file,high
+string,slack-webhook,K2F Slack exfil collector,high
+file_pattern,%TEMP%\k2f-bcreds-*,Temporary credential file,high
+file_pattern,%TEMP%\k2f_screen_*.jpg,Screenshot file,high
+file_pattern,^k2f.*\.lua$,K2F Lua module file pattern,medium
+url_pattern,hxxps://analytics[.]insightjs[.]com/px/{CAMPAIGN_ID}.{KIND},C2 ingest,high
+url_pattern,hxxps://analytics[.]insightjs[.]com/collect/{CAMPAIGN_ID}.{KIND},C2 collect ingest,high
+url_pattern,hxxps://analytics[.]insightjs[.]com/collect/{CAMPAIGN_ID},campaign-keyed decoy,high
+host_pattern,hooks[.]slack[.]com/(services|workflow|triggers),Slack webhook exfil,medium
+cert_subject,CN=k2f operator CA,Portal mTLS CA subject,medium
+string,commands.exec,K2F remote command execution dispatch key,high
+string,commands.download,K2F remote file download dispatch key,high
+string,commands.file_chunk,K2F chunked file transfer dispatch key,high
+string,commands.screens,K2F screen capture dispatch key,high
+string,commands.creds,K2F credential harvest dispatch key,high
+string,commands.keyscan,K2F key-material scan dispatch key,high
+string,commands.browserscan,K2F browser data extraction dispatch key,high
+string,commands.wallet_files,K2F wallet extension file extraction dispatch key,high
+string,commands.chrome_install,K2F loader DLL install dispatch key,high
+string,commands.chrome_uninstall,K2F loader DLL removal dispatch key,high
+string,commands.chrome_cleanup,K2F loader DLL cleanup dispatch key,high
+string,commands.chrome_scan,K2F loader DLL presence check dispatch key,high
+string,commands.payload_cleanup,K2F self-cleanup dispatch key,high
+string,commands.sysinfo,K2F host facts dispatch key,medium
+string,commands.host_facts,K2F host facts dispatch key,medium
+string,commands.whoami,K2F identity/privilege dispatch key,medium
+string,commands.ls,K2F directory listing dispatch key,medium
+string,commands.cd,K2F working directory dispatch key,medium
+string,commands.cat,K2F file read dispatch key,medium
+string,args.command_line must be a non-empty string,K2F exec argument contract,high
+string,use the interactive shell to run without a deadline,K2F interactive operator shell hint,high
+string,"chrome_install: args.dll must be the DLL, base64 encoded",K2F DLL installer argument contract,high
+string,chrome_install: args.dll is not valid base64,K2F DLL installer base64 validation,high
+string,wallet_files: args.ids must be a list,K2F wallet file extraction argument contract,high
+string,agent id must be 32 hex characters,K2F campaign id validation,medium
+string,token must be 64 hex characters,K2F bearer token validation,medium
+string,refused: not LuaJIT bytecode,K2F loader bytecode acceptance check,high
+string,win32.ffi_defs,K2F native module: struct typedefs,high
+string,win32.hook,K2F native module: named-pipe control channel,high
+string,win32.exec,K2F native module: process creation and pipes,high
+string,win32.creds,K2F native module: Credential Manager and DPAPI,high
+string,win32.screens,K2F native module: screen capture,high
+string,win32.chrome,K2F native module: Chrome profile and key access,high
+string,win32.firefox,K2F native module: Firefox profile and key access,high
+string,win32.extensions,K2F native module: browser extension enumeration,high
+string,win32.registry,K2F native module: registry access,medium
+string,win32.fs,K2F native module: filesystem access,medium
+string,win32.sysinfo,K2F native module: host facts,medium
+string,win32.whoami,K2F native module: identity and integrity level,medium
+string,win32.system,K2F native module: process and token primitives,medium
+string,win32.text,K2F native module: UTF-8/UTF-16 helpers,medium
+file_pattern,%LOCALAPPDATA%\Google\Chrome\User Data\PlatformExperienceHelper\<64-hex>\platform_experience_helper.dll,K2F loader DLL in a 64-hex subdirectory; parent Chrome directory is legitimate,high
+file_pattern,platform_experience_helper.dll,K2F loader DLL filename; legitimate Chrome component is an EXE,high
+named_pipe,k2f_chan,K2F control named pipe,high
+bytes,1B 4C 4A 01,LuaJIT 2.0 bcdump revision 1 header (bundle),high
+bytes,01 FF 0D 00 00 1C,"K2F obfuscated string-table constant header (narray=1791, first entry nil)",high
+bytes,01 00 55 06 ?? 03 ?? 06 ?? 03 ??,K2F 85-symbol substitution alphabet table signature,high
+bytes,01 00 40 06 ?? 03 ?? 06 ?? 03 ??,K2F 64-symbol substitution alphabet table signature,high
+url_pattern,hxxps://analytics[.]insightjs[.]com/px/{CAMPAIGN_ID},"C2 ingest, bare campaign route observed in the loader DLL",medium
+url_pattern,"POST /speed with {""payload"":""{\""name\"":\""page_view\"",\""originFrom\"":\""launcher\""",facade RUM beacon; synthesised reply is a sibling-infrastructure pivot,medium
+string,"originFrom"":""launcher",facade beacon envelope marker,medium
+string,service_util.dll,K2F side-load candidate name (unverified),low
+string,C:\Windows\System32\winsqlite3.dll,K2F uses system SQLite (living-off-the-land),medium
+string,^k2f.*%.lua$,K2F Lua module filename pattern,medium
+host_pattern,insightjs[.]org,"Historical upstream Stage 1 fallback; later third-party warning page, not necessarily active C2",high
+url_pattern,hxxps://sg-gpts[.]playerinfinite[.]com/comm/assets/lib/aegis-fix[.]min[.]js,Historically modified official launcher asset; do not block the entire official host,high
+url_pattern,hxxps://na-webassets.playerinfinite[.]com/comm/nikke_launcher/assets/images.7fec4c32[.]js,Historically modified official launcher asset; do not block the entire official host,high
+url_pattern,hxxps://insightjs[.]com/l.js?f=aegis,Stage 1 loader URL reported for modified aegis asset,high
+url_pattern,hxxps://insightjs[.]com/l.js?f=images,Stage 1 loader URL reported for modified images asset,high
+url_pattern,hxxps://insightjs[.]org/l.js,Historical Stage 1 fallback URL; later third-party warning content,high
+url_pattern,hxxps://analytics[.]insightjs[.]com/comm/assets/insight.bundle,Stage 2 LuaJIT bundle download URL,high
+etag,50d1861152ea7f6875ffceb7d08445b5,ETag of modified aegis-fix.min.js fetched 2026-11-03 before official cleanup,high
+etag,481e9b5ab8fb93406bf31980b53e0578,ETag of modified images.7fec4c32.js fetched 2026-11-03 before official cleanup,high
+string,k2f.agent.state,K2F persistent agent state key in launcher Local Storage LevelDB,high
+string,k2f_chan registered,K2F launcher debug.log execution marker,high
+string,agent started as,K2F launcher debug.log execution marker,high
+string,lua downloaded to log\tinyget,K2F launcher tinyget payload-download log marker,high
+registry,HKCU\Software\Classes\CLSID\{E77CC89B-7401-4C04-8CED-149DB35ADD04}\InprocServer32,Reported K2F Chrome persistence hijack; HKLM namesake is legitimate,high
+sha256,2f2aac505f486067af6831d6c75ea74df63acb1ed4e4002709c5962c68bd9203,"Historical poisoned FeedList.feb647c9.js (5,808 bytes; current object is clean; retain for cache/forensic detection)",high
+etag,b7d842200372ad0d9a84ef4cc8511311,Historical ETag of poisoned FeedList.feb647c9.js; not the current clean object,high
+url_pattern,hxxps://na-webassets[.]playerinfinite[.]com/comm/nikke_launcher/assets/FeedList.feb647c9[.]js,"Historically poisoned official Launcher asset FeedList.feb647c9.js; current object clean, historical/cache IOC",high
+url_pattern,hxxps://insightjs[.]com/l.js?f=feedlist,Stage 1 loader variant referenced by poisoned FeedList asset,high
+sha256,60fd53ab7356384ba2161b9bc84420cd170905011a2f3ca09f3e38fe3122f3a1,"Earlier K2F bundle (165,108 bytes, 14 commands) downloaded 2026-10-23; third-party victim report",medium
+etag,6ae78037-3214f,"Nginx ETag for a 205,135-byte K2F bundle build uploaded 2026-11-01 18:08:55 GMT; not SHA-256",medium
+etag,6ae8ccff-3214f,"Nginx ETag for a 205,135-byte K2F bundle build uploaded 2026-11-02 17:48:47 GMT; not SHA-256",medium
+etag,6ae90538-3214f,"Nginx ETag for a 205,135-byte K2F bundle build uploaded 2026-11-02 21:48:40 GMT; not SHA-256",medium
+ip,89[.]126[.]250[.]172,Reported second K2F C2 address seen on another host from 2026-10-05; not independently verified,medium
+sha256,3aaafbd612f04501a6fdb0bb8b2f8a87796223e5584ac18ea5eb180feeafb193,Poisoned vue-bucket.min.js recovered from a launcher HTTP cache; third-party evidence,medium
+etag,dd06875637a29cddd3bae2ba84142c78,Historical ETag of poisoned vue-bucket.min.js; third-party evidence,medium
+url_pattern,hxxps://na-webassets[.]playerinfinite[.]com/comm/assets/lib/vue-bucket[.]min[.]js,Historically poisoned fourth official asset; current object clean,medium
+url_pattern,hxxps://insightjs[.]com/l.js?f=vue,Stage 1 loader variant referenced by the poisoned vue-bucket asset,medium
+
+string,JeFWywdZy+3jPC93e3P7ACdJ8liQHB7rH+9VHn7kswg=,Chromium TransportSecurity hashed-host key for insightjs.com,high
+string,wxL1BeG57AG6frvPqS7txqpE3NyN0/fSUZHCbEn9NSw=,Chromium TransportSecurity hashed-host key for analytics.insightjs.com,high
+string,+EQMCXxbp1N4L3mxYGR66hSUD0cvdir6DDtJBLH3wPk=,Chromium TransportSecurity hashed-host key for insightjs.org,high

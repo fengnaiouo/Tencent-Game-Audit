@@ -1,0 +1,14 @@
+﻿# Local and generated artifacts
+*.exe
+*.exe~
+*.zip
+*.json
+*.html
+*.log
+*.tmp
+*.bak
+portable-release/
+**/portable-release/
+**/vendor/
+**/.DS_Store
+Thumbs.db

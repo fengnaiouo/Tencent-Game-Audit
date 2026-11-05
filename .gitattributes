@@ -1,0 +1,14 @@
+* text=auto eol=lf
+*.go text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+*.csv text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.ps1 text eol=crlf
+*.txt text eol=lf
+*.exe binary
+*.zip binary
+*.jpg binary
+*.png binary

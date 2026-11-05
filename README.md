@@ -1,1 +1,83 @@
-# Tencent-Game-Audit
+# Tencent Game Audit
+
+A portable, read-only Windows security auditing tool for Tencent's game ecosystem worldwide. It inventories game and launcher locations and hunts for documented indicators of compromise (IOCs), suspicious persistence, process behavior, DLL content, signatures, and network artifacts.
+
+> **Scope and evidence discipline:** This project investigates Tencent-operated, controlled, published, and selected investment-related game ecosystems. A publisher or investment relationship is a discovery hint, not proof that a title is owned by Tencent or compromised. NIKKE/K2F indicators remain attributed to that documented incident unless independent evidence supports broader attribution. A clean scan is not proof of a clean system.
+
+## Global and regional support
+
+- Designed for Windows installations in mainland China, Taiwan, Hong Kong, Japan, Korea, Southeast Asia, Europe, the Americas, and other regions.
+- Does not hard-code a country, timezone, decimal format, or installation drive. Uses Windows environment variables, registry metadata, launcher manifests, Steam libraries, Epic manifests, and optional user-supplied paths.
+- Recognizes selected Traditional Chinese and Simplified Chinese game-title and publisher aliases alongside international titles.
+- JSON field names remain stable English identifiers for automation and SIEM ingestion. Timestamps use RFC 3339 with the host's local UTC offset.
+- Console language can be selected with `-lang auto|en|zh-Hant|zh-Hans|ja|ko|pt-BR|fr|de|es|id|th|vi|ru|pl|tr|it`. Unsupported locales fall back to English. `auto` uses locale environment variables or the Windows user UI culture and otherwise falls back to English; explicitly set `-lang` for predictable output. Summary labels are localized; finding details and JSON identifiers remain English for stable triage and automation.
+- IOC matching is region-independent. Regional game editions, publisher names, launcher paths, and custom install locations can differ; use repeatable `-root` arguments to include locations not discovered automatically.
+
+## Requirements
+
+- Target: Windows 10/11 x64 (the portable release does not require Go, Rust, Python, or network access).
+- Recommended: run elevated for broader visibility into services, processes, registry and other users' files. Non-elevated scans remain useful but may have access limitations.
+- Build: Go 1.23 or newer.
+
+## Quick start
+
+```powershell
+# Standard scan
+.\Tencent-Game-Audit.exe
+
+# Include additional game libraries (repeat -root as needed)
+.\Tencent-Game-Audit.exe -root "D:\Games" -root "F:\WeGame"
+
+# Focused scan of only the supplied paths
+.\Tencent-Game-Audit.exe -root-only -root "D:\Games"
+
+# System persistence, process and network snapshot only
+.\Tencent-Game-Audit.exe -system-only
+
+# Raise file scan budget
+.\Tencent-Game-Audit.exe -full
+
+# Choose report/console locale and a private report destination
+.\Tencent-Game-Audit.exe -lang en -json "$env:TEMP\Tencent-Game-Audit.json"
+.\Tencent-Game-Audit.exe -lang zh-Hant -json "$env:TEMP\Tencent-Game-Audit.json"
+```
+
+The scanner is read-only: it does not delete, quarantine, repair, terminate processes, change Defender/firewall/hosts/registry settings, or contact live C2 infrastructure. It writes a JSON report. Reports can contain usernames, computer names, file paths, process command lines, and installed-game information; review and redact them before public sharing.
+
+## Detection coverage
+
+- Game and launcher discovery from Windows uninstall metadata, Steam libraries, Epic manifests, Tencent/WeGame/Level Infinite/Riot paths, known game directory names, and explicit paths.
+- Known K2F hashes, strings, LuaJIT structure, launcher/cache traces, persistence identifiers, DNS/hosts/named-pipe and active TCP IOC matches.
+- Candidate executable, DLL, SYS and script content scanning; Authenticode status and signer enrichment for findings.
+- Windows Run keys, services, scheduled tasks, Startup folders, per-user COM registrations, loaded browser persistence DLLs, Chromium cache/HSTS records, suspicious process command lines and established external TCP connections.
+- Selected cross-game loader API combinations are triage leads only. Game engines, anti-cheat, DRM, overlays and modding tools may legitimately use similar APIs.
+
+### Severity
+
+- `CRITICAL`: a high-confidence, specifically documented IOC or persistence indicator matched.
+- `WARNING`: multiple or meaningful indicators warrant investigation; not a definitive infection verdict.
+- `REVIEW`: heuristic or contextual evidence requiring analyst validation.
+- `INFO`: inventory, scan limits, or informational observations.
+
+## Build from source
+
+```powershell
+cd tencent-game-audit
+.\build-portable.ps1
+```
+
+The script runs uncached Go tests, `go vet`, builds Windows amd64 with CGO disabled, and creates the portable ZIP. It does not start a server. Build outputs are ignored by Git and should be attached to a tagged GitHub Release rather than committed to source history.
+
+## Repository layout
+
+- `tencent-game-audit/`: Go source, tests, embedded IOC CSV, and portable build script.
+- `docs/`: detection source provenance and technical notes.
+- `README.md`: project overview and quick start.
+
+## Contributing and responsible disclosure
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and [detection source notes](docs/DETECTION-SOURCES.md). Every IOC should include a source, first/last-seen context where known, confidence, affected product/region if established, and license/redistribution notes. Do not convert rumors or a Tencent investment relationship into a confirmed compromise claim.
+
+## License
+
+No license has been declared yet. Until a license is added by the repository owner, all rights are reserved; do not assume that public visibility grants permission to redistribute or relicense the source or bundled IOC data.
