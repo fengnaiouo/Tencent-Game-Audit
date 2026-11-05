@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -63,6 +64,88 @@ func TestParseWindowsVolumeRoots(t *testing.T) {
 	}
 }
 
+func TestParseWindowsProfilePaths(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		data string
+		want []string
+	}{
+		{name: "relocated profiles", data: `["D:\\Profiles\\alice","E:\\Accounts\\bob"]`, want: []string{`D:\Profiles\alice`, `E:\Accounts\bob`}},
+		{name: "single profile", data: `"F:\\UserData\\carol"`, want: []string{`F:\UserData\carol`}},
+		{name: "empty profile list", data: `[]`, want: nil},
+		{name: "malformed response", data: `not-json`, want: nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseWindowsProfilePaths([]byte(tc.data))
+			if len(got) != len(tc.want) {
+				t.Fatalf("parseWindowsProfilePaths() returned %#v, want %#v", got, tc.want)
+			}
+			for i := range tc.want {
+				if !strings.EqualFold(got[i], tc.want[i]) {
+					t.Errorf("profile path %d = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestUserLocalProfileRootsAreDiscoveredAndExisting(t *testing.T) {
+	roots := userLocalProfileRoots()
+	t.Logf("detected %d existing user Local AppData roots: %q", len(roots), roots)
+	if runtime.GOOS == "windows" {
+		t.Logf("Windows registered profile homes: %q", windowsUserProfilePaths())
+	}
+	for _, root := range roots {
+		info, err := os.Stat(root)
+		if err != nil || !info.IsDir() {
+			t.Errorf("discovered profile root is not an accessible directory: %q (err=%v)", root, err)
+		}
+	}
+	if runtime.GOOS == "windows" {
+		if local := os.Getenv("LOCALAPPDATA"); local != "" {
+			found := false
+			for _, root := range roots {
+				if strings.EqualFold(filepath.Clean(root), filepath.Clean(local)) {
+					found = true
+					break
+				}
+			}
+			if _, err := os.Stat(local); err == nil && !found {
+				t.Errorf("current user's LOCALAPPDATA was not included: %q", local)
+			}
+		}
+	}
+}
+
+func TestExistingUserLocalProfileRootsSupportRelocatedProfiles(t *testing.T) {
+	base := t.TempDir()
+	redirectedLocal := filepath.Join(base, "Redirected", "CurrentUserLocal")
+	otherProfile := filepath.Join(base, "E-drive", "Profiles", "other-user")
+	otherLocal := filepath.Join(otherProfile, "AppData", "Local")
+	for _, path := range []string{redirectedLocal, otherLocal} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got := existingUserLocalProfileRoots(redirectedLocal, "", []string{otherProfile})
+	if len(got) != 2 {
+		t.Fatalf("expected redirected current-user and relocated other-user roots, got %#v", got)
+	}
+	for _, want := range []string{redirectedLocal, otherLocal} {
+		found := false
+		for _, root := range got {
+			if strings.EqualFold(filepath.Clean(root), filepath.Clean(want)) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("relocated profile root %q was not discovered in %#v", want, got)
+		}
+	}
+}
+
 func TestNormalizeLanguage(t *testing.T) {
 	cases := map[string]string{"zh_TW": "zh-Hant", "zh-HK": "zh-Hant", "zh-CN": "zh-Hans", "ja-JP": "ja", "ko-KR": "ko", "pt_BR": "pt-BR", "fr-FR": "fr", "de-DE": "de", "es-ES": "es", "id-ID": "id", "th-TH": "th", "vi-VN": "vi", "ru-RU": "ru", "pl-PL": "pl", "tr-TR": "tr", "it-IT": "it", "en-US": "en"}
 	for input, want := range cases {
@@ -98,6 +181,46 @@ func TestK2FBundleStructure(t *testing.T) {
 	}
 	if bytesK2FStructure([]byte{0x1b, 'L', 'J', 1, 1, 2, 3}) {
 		t.Fatal("ordinary LuaJIT header must not be enough")
+	}
+}
+
+func TestDeepInspectTreatsGenericLuaJITHeaderAsReviewOnly(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "resource.bin")
+	content := []byte{0x1b, 'L', 'J', 1, 0x01, 0x02, 0x03, 0x04}
+	if err := os.WriteFile(p, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := &Report{}
+	deepInspectFile(p, int64(len(content)), 1024, r)
+	for _, f := range r.Findings {
+		if f.Severity == "CRITICAL" {
+			t.Fatalf("generic LuaJIT header must not be critical: %+v", f)
+		}
+	}
+	if len(r.Findings) == 0 || r.Findings[0].Severity != "REVIEW" {
+		t.Fatalf("expected a low-confidence review lead, got %+v", r.Findings)
+	}
+	if !strings.Contains(r.Findings[0].Evidence, "SHA256=") {
+		t.Fatalf("deep finding must include SHA256: %+v", r.Findings[0])
+	}
+}
+
+func TestDeepInspectDetectsK2FStructureInArbitraryExtension(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "opaque.resource")
+	content := []byte{0x1b, 'L', 'J', 1, 0x01, 0xff, 0x0d, 0, 0, 0x1c, '1', 'p', 'd', '(', '-', 'H', '"', 'q', '_', 'L', 'T', '4', 'n', '`', '`', 'b', '_', 'h', '+', 'p', '<', '"', 'J'}
+	if err := os.WriteFile(p, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := &Report{}
+	deepInspectFile(p, int64(len(content)), 1024, r)
+	found := false
+	for _, f := range r.Findings {
+		if f.Severity == "CRITICAL" && strings.Contains(f.Category, "structural signature") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected K2F-specific structure in arbitrary extension, got %+v", r.Findings)
 	}
 }
 

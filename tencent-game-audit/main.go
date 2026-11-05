@@ -32,7 +32,7 @@ import (
 var iocFS embed.FS
 
 const clsid = `{E77CC89B-7401-4C04-8CED-149DB35ADD04}`
-const version = "0.2.0"
+const version = "0.4.0"
 
 var knownHashes = map[string]string{
 	"f3e93d049851d5c19552c7d9b73c8be4580dc9d549e8f65f9f0c357c1df9d252": "K2F Sample-A.dll loader",
@@ -128,10 +128,69 @@ type Report struct {
 
 type config struct {
 	full       bool
+	deep       bool
 	maxFiles   int
 	maxPerRoot int
 	maxBytes   int64
 	roots      []string
+}
+
+// deepInspectFile performs bounded, read-only content analysis on arbitrary
+// file types. It never loads or executes the inspected content as code.
+func deepInspectFile(path string, size, maxBytes int64, r *Report) {
+	if size < 1 || size > maxBytes {
+		if size > maxBytes {
+			r.SkippedFiles++
+			addFinding(r, "INFO", "Deep analysis size limit", path, fmt.Sprintf("File size %d exceeds deep-analysis limit %d bytes", size, maxBytes), "scan limitation")
+		}
+		return
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		r.SkippedFiles++
+		addFinding(r, "INFO", "Deep analysis read failure", path, err.Error(), "scan limitation")
+		return
+	}
+	sum := sha256.Sum256(b)
+	sha := hex.EncodeToString(sum[:])
+	if desc, ok := knownHashes[sha]; ok {
+		addFinding(r, "CRITICAL", "Known malicious SHA256 (deep scan)", path, desc+"; SHA256="+sha, "high")
+	}
+	// A bare LuaJIT magic header occurs in legitimate game resources. Treat it
+	// only as a review lead unless the K2F-specific structure also matches.
+	if len(b) >= 4 && b[0] == 0x1b && b[1] == 'L' && b[2] == 'J' && b[3] == 1 {
+		if bytesK2FStructure(b) {
+			addFinding(r, "CRITICAL", "K2F LuaJIT structural signature (deep scan)", path, "K2F-specific LuaJIT string-table structure; SHA256="+sha, "high")
+		} else {
+			addFinding(r, "REVIEW", "LuaJIT bytecode header (deep scan)", path, "Generic LuaJIT 2.0 bytecode header only; not proof of K2F or malware; SHA256="+sha, "low; generic format marker")
+		}
+	}
+	low := strings.ToLower(string(b))
+	var hits []string
+	for _, needle := range suspiciousStrings {
+		if strings.Contains(low, strings.ToLower(needle)) {
+			hits = append(hits, needle)
+		}
+	}
+	if len(hits) > 0 {
+		sev, confidence := "WARNING", "medium"
+		if containsAny(hits, "k2f_chan registered", "k2f.agent.state", "the evaluated bundle is not on disk", "analytics.insightjs.com") {
+			sev, confidence = "CRITICAL", "high"
+		}
+		addFinding(r, sev, "K2F content indicators (deep scan)", path, strings.Join(hits, ", ")+"; SHA256="+sha, confidence)
+	}
+	for _, ioc := range embeddedIOCs {
+		if ioc.Type == "bytes" && matchHexPattern(b, ioc.Value) {
+			if strings.Contains(strings.ToLower(ioc.Description), "luajit 2.0 bcdump revision 1 header") {
+				continue // The dedicated header branch above records this with the file hash.
+			}
+			sev, confidence := "WARNING", ioc.Confidence
+			if ioc.Confidence == "high" {
+				sev = "CRITICAL"
+			}
+			addFinding(r, sev, "K2F byte signature (deep scan)", path, ioc.Description+" ("+ioc.Value+"); SHA256="+sha, confidence)
+		}
+	}
 }
 
 func addFinding(r *Report, sev, cat, path, ev, conf string) {
@@ -493,10 +552,13 @@ func inspectFile(path string, size int64, r *Report, maxBytes int64) {
 			for _, ioc := range embeddedIOCs {
 				if ioc.Type == "bytes" && matchHexPattern(b, ioc.Value) {
 					sev := "WARNING"
-					if ioc.Confidence == "high" {
+					confidence := ioc.Confidence
+					if strings.Contains(strings.ToLower(ioc.Description), "luajit 2.0 bcdump revision 1 header") {
+						sev, confidence = "REVIEW", "low; generic LuaJIT header is not a malware signature"
+					} else if ioc.Confidence == "high" {
 						sev = "CRITICAL"
 					}
-					addFinding(r, sev, "K2F byte signature", path, ioc.Description+" ("+ioc.Value+")", ioc.Confidence)
+					addFinding(r, sev, "K2F byte signature", path, ioc.Description+" ("+ioc.Value+")", confidence)
 				}
 			}
 		}
@@ -625,6 +687,9 @@ func scanRoots(roots []string, cfg config, r *Report) {
 		if !info.IsDir() {
 			r.ScannedFiles++
 			inspectFile(root, info.Size(), r, cfg.maxBytes)
+			if cfg.deep {
+				deepInspectFile(root, info.Size(), cfg.maxBytes, r)
+			}
 			continue
 		}
 		rootFiles := 0
@@ -651,6 +716,7 @@ func scanRoots(roots []string, cfg config, r *Report) {
 				return filepath.SkipAll
 			}
 			if rootFiles >= cfg.maxPerRoot {
+				addFinding(r, "INFO", "Per-root scan limit", root, fmt.Sprintf("Stopped after %d files in this root", cfg.maxPerRoot), "scan limitation")
 				return filepath.SkipDir
 			}
 			seen[strings.ToLower(path)] = true
@@ -665,6 +731,9 @@ func scanRoots(roots []string, cfg config, r *Report) {
 				return nil
 			}
 			inspectFile(path, fi.Size(), r, cfg.maxBytes)
+			if cfg.deep {
+				deepInspectFile(path, fi.Size(), cfg.maxBytes, r)
+			}
 			return nil
 		})
 		if globalLimitReached {
@@ -696,18 +765,68 @@ func isSHA256DirName(name string) bool {
 	return true
 }
 
-func userLocalProfileRoots() []string {
-	var roots []string
-	if local := os.Getenv("LOCALAPPDATA"); local != "" {
-		roots = append(roots, local)
+func parseWindowsProfilePaths(data []byte) []string {
+	var paths []string
+	if err := json.Unmarshal(data, &paths); err != nil {
+		var one string
+		if json.Unmarshal(data, &one) == nil && strings.TrimSpace(one) != "" {
+			paths = append(paths, one)
+		}
 	}
-	usersRoot := filepath.Join(os.Getenv("SystemDrive")+`\`, "Users")
-	profiles, _ := filepath.Glob(filepath.Join(usersRoot, "*", "AppData", "Local"))
-	roots = append(roots, profiles...)
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		roots = append(roots, filepath.Join(home, "AppData", "Local"))
+	var cleaned []string
+	for _, path := range paths {
+		path = strings.TrimSpace(os.ExpandEnv(path))
+		if path != "" {
+			cleaned = append(cleaned, filepath.Clean(path))
+		}
+	}
+	return unique(cleaned)
+}
+
+// windowsUserProfilePaths asks Windows for registered local profiles instead
+// of assuming that profiles live below %SystemDrive%\\Users. This also covers
+// relocated profiles and installations whose system drive is not C:.
+func windowsUserProfilePaths() []string {
+	if runtime.GOOS != "windows" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	ps := `$ErrorActionPreference='Stop'; $paths=@(Get-CimInstance -ClassName Win32_UserProfile -ErrorAction Stop | Where-Object { -not $_.Special -and $_.LocalPath } | ForEach-Object { [Environment]::ExpandEnvironmentVariables([string]$_.LocalPath) }); ConvertTo-Json -InputObject $paths -Compress`
+	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", ps)
+	data, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	return parseWindowsProfilePaths(data)
+}
+
+func existingUserLocalProfileRoots(localAppData, home string, profileHomes []string) []string {
+	var candidates []string
+	// LOCALAPPDATA is authoritative for the process user, including redirected
+	// or relocated AppData locations.
+	if localAppData != "" {
+		candidates = append(candidates, localAppData)
+	}
+	if home != "" {
+		candidates = append(candidates, filepath.Join(home, "AppData", "Local"))
+	}
+	for _, profile := range profileHomes {
+		candidates = append(candidates, filepath.Join(profile, "AppData", "Local"))
+	}
+	var roots []string
+	for _, candidate := range unique(candidates) {
+		info, err := os.Stat(candidate)
+		if err == nil && info.IsDir() {
+			roots = append(roots, candidate)
+		}
 	}
 	return unique(roots)
+}
+
+func userLocalProfileRoots() []string {
+	home, _ := os.UserHomeDir()
+	return existingUserLocalProfileRoots(os.Getenv("LOCALAPPDATA"), home, windowsUserProfilePaths())
 }
 
 func browserUserDataPaths(local string) []string {
@@ -878,6 +997,7 @@ func collectTempArtifacts() []string {
 func main() {
 	showVersion := flag.Bool("version", false, "Print scanner version and exit")
 	full := flag.Bool("full", false, "Raise scan budget; still skips Windows/system trees")
+	deep := flag.Bool("deep", false, "Deep read-only content analysis of every file in selected roots; hashes files and inspects embedded indicators")
 	systemOnly := flag.Bool("system-only", false, "Collect Windows persistence/process/network snapshot without walking game files")
 	rootOnly := flag.Bool("root-only", false, "Scan only folders supplied with -root; skip automatic game/browser discovery")
 	jsonPath := flag.String("json", "", "Write a JSON report to this path (default: timestamped report beside executable)")
@@ -905,11 +1025,19 @@ func main() {
 	}
 	lang := normalizeLanguage(*language)
 	limit := 100000
+	perRootLimit := 25000
 	if *full {
 		limit = 500000
 	}
-	cfg := config{full: *full, maxFiles: limit, maxPerRoot: 25000, maxBytes: 512 << 20, roots: extra}
+	if *deep {
+		limit = 1000000
+		perRootLimit = 250000
+	}
+	cfg := config{full: *full, deep: *deep, maxFiles: limit, maxPerRoot: perRootLimit, maxBytes: 512 << 20, roots: extra}
 	mode := "read-only"
+	if *deep {
+		mode = "read-only deep content analysis"
+	}
 	if *systemOnly {
 		mode = "read-only system snapshot"
 	}
@@ -918,6 +1046,7 @@ func main() {
 		"Tencent portfolio inventory is best-effort: uninstall metadata, Steam libraries and Epic manifests do not cover every launcher, portable install, region or custom path.",
 		"System persistence/process/network snapshot is point-in-time and best-effort; protected processes and other users' private profile data may be inaccessible without elevation.",
 		"Raw LevelDB/Code Cache scans do not decompress Chromium records; a no-hit result does not exclude compressed or deleted evidence.",
+		"Deep mode hashes and inspects file contents without executing them; encrypted, compressed, packed, sparse, inaccessible, and oversized files may still require specialist tooling.",
 		"This is IOC hunting, not antivirus, EDR, memory forensics or proof that a device is clean. Historical IOC hits may indicate past contact, not current execution.",
 		"No live C2, domain, IP, URL or third-party service is contacted. No files, registry keys, firewall, hosts or Defender settings are changed.",
 	}}

@@ -120,6 +120,30 @@ This is an append-only project activity log for the `Tencent-Game-Audit` reposit
 
 _Append dated results here. Do not rewrite earlier entries; correct mistakes with a new dated note._
 
+### 2026-11-05 — Deep file analysis mode
+
+**User request:** “能讓他在更深入檢測檔案嗎?” (enable deeper file inspection).
+
+**Implementation:**
+- Added `-deep` to perform bounded, read-only content inspection and SHA-256 calculation for all file extensions in explicitly selected scan roots. The mode does not execute, load, unpack, or modify inspected files.
+- Deep mode raises limits to 250,000 files per root and 1,000,000 total; files over 512 MiB and read failures are surfaced as scan limitations.
+- Findings from deep content inspection include SHA-256 evidence. K2F-specific LuaJIT structure remains a high-confidence match, while the generic LuaJIT 2.0 header is now low-confidence `REVIEW` only. Updated the IOC catalog confidence accordingly.
+- Updated the scanner version to `0.4.0`, documented deep mode, and added regression tests for generic-header severity and K2F-specific structure in an arbitrary extension.
+
+**Tool/validation ledger:**
+- Chat On Steroids Core `read`: inspected `main.go`, `main_test.go`, `report.go`, `README.md`, `iocs.csv`, build script, and current project session log.
+- Chat On Steroids Core `apply_patch`: updated `tencent-game-audit/main.go`, `main_test.go`, `README.md`, `iocs.csv`, root `CHANGELOG.md`, and this log.
+- `rtk gofmt -w main.go main_test.go`: passed.
+- `rtk go test -count=1 ./...`: 41 tests passed.
+- `rtk go vet ./...`: passed.
+- `rtk git diff --check`: passed.
+- `rtk pwsh -NoProfile -File .\build-portable.ps1`: passed; Windows x64 executable and portable ZIP rebuilt. Executable reports `Tencent Game Audit v0.4.0`.
+- CLI smoke test scanned a synthetic `.bin` file containing only the generic LuaJIT header; it produced low-confidence `REVIEW` findings with SHA-256, not `CRITICAL`.
+- Attempted a deep scan of the Delta Force path recorded in the supplied HTML report. That path is not present in the currently connected workspace environment, so the scan could not inspect the game files. No claim is made that Delta Force was rescanned.
+- No commit, push, PR, merge, release, or server start was performed. Existing unrelated untracked `k2f-iocs-reference.csv` and `riju-x-post.jpg` were preserved and not staged.
+
+**Remaining limitations:** Deep mode is static IOC/content analysis, not a sandbox, decompiler, archive unpacker, memory scanner, or antivirus. Encrypted/packed/compressed content and files outside the selected roots remain outside its visibility. The Delta Force path must be rescanned on a machine where that installation is actually mounted.
+
 ### 2026-11-05 — Final repository state
 
 - Changed tracked files: `CHANGELOG.md`, `README.md`, `tencent-game-audit/README.md`, `tencent-game-audit/main.go`, `tencent-game-audit/main_test.go`, and `tencent-game-audit/windows_audit.go`.

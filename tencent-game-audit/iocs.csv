@@ -71,7 +71,7 @@ string,win32.text,K2F native module: UTF-8/UTF-16 helpers,medium
 file_pattern,%LOCALAPPDATA%\Google\Chrome\User Data\PlatformExperienceHelper\<64-hex>\platform_experience_helper.dll,K2F loader DLL in a 64-hex subdirectory; parent Chrome directory is legitimate,high
 file_pattern,platform_experience_helper.dll,K2F loader DLL filename; legitimate Chrome component is an EXE,high
 named_pipe,k2f_chan,K2F control named pipe,high
-bytes,1B 4C 4A 01,LuaJIT 2.0 bcdump revision 1 header (bundle),high
+bytes,1B 4C 4A 01,LuaJIT 2.0 bcdump revision 1 header (bundle),low
 bytes,01 FF 0D 00 00 1C,"K2F obfuscated string-table constant header (narray=1791, first entry nil)",high
 bytes,01 00 55 06 ?? 03 ?? 06 ?? 03 ??,K2F 85-symbol substitution alphabet table signature,high
 bytes,01 00 40 06 ?? 03 ?? 06 ?? 03 ??,K2F 64-symbol substitution alphabet table signature,high
