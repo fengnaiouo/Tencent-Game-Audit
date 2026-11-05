@@ -6,3 +6,6 @@ contact_links:
   - name: Support and usage questions
     url: https://github.com/fengnaiouo/Tencent-Game-Audit/blob/main/SUPPORT.md
     about: Read support guidance before opening an issue.
+  - name: Project architecture and roadmap
+    url: https://github.com/fengnaiouo/Tencent-Game-Audit/blob/main/docs/ARCHITECTURE.md
+    about: Review the Go production architecture and experimental Rust-core integration stages.

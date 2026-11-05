@@ -39,3 +39,16 @@ jobs:
           $env:GOARCH = 'amd64'
           $env:CGO_ENABLED = '0'
           go build -trimpath -ldflags='-s -w' -o Tencent-Game-Audit.exe .
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          rust-src-dir: rust-core
+      - name: Check Rust formatting
+        working-directory: rust-core
+        run: cargo fmt --all -- --check
+      - name: Run Rust tests
+        working-directory: rust-core
+        run: cargo test --locked
+      - name: Run Rust Clippy
+        working-directory: rust-core
+        run: cargo clippy --locked --all-targets -- -D warnings

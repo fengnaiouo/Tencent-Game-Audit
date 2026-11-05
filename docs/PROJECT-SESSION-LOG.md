@@ -366,3 +366,37 @@ _Append dated results here. Do not rewrite earlier entries; correct mistakes wit
 - Local `main` is clean relative to `origin/main`; only pre-existing unrelated untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain. No real game or fixed-volume scan was run and no server was started.
 - The repository build script was deliberately not used because it overwrites pre-existing root EXE and portable ZIP artifacts. The Windows build will be written to a unique OS temporary path instead.
 - Pre-existing untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain untouched and excluded from staging. No server or real game scan was started.
+
+### 2026-11-06 — Formalize public project workflows and add experimental Rust core
+
+**User request:** Consolidate the GitHub project into a more formal public project and include the proposed Rust scanning core.
+
+**Repository audit:**
+- The repository already had `CONTRIBUTING.md`, `SECURITY.md`, `GOVERNANCE.md`, `SUPPORT.md`, a PR template, Bug Report and Detection Review issue forms, Dependabot, CI, a Release workflow, and protected `main`.
+- GitHub Issues were empty at the start of this task. The repository had no declared license, so public visibility did not grant reuse rights. GitHub private vulnerability reporting was confirmed enabled; Discussions were disabled.
+- Two Dependabot PRs (#2 and #5) were already open and were left untouched.
+
+**Implementation:**
+- Added `rust-core/`, an independent Rust library prototype for fixed-buffer streaming SHA-256 and multi-pattern byte IOC matching, including chunk-boundary overlap handling and bounded per-pattern match aggregation.
+- Rust defaults: 4 MiB read buffer, 256 MiB scanner working-buffer budget, and maximum 8 workers. Buffer size is configurable from 256 KiB to 16 MiB; the effective worker limit is reduced according to buffer size, pattern overlap, and a conservative per-worker allowance.
+- The Rust core is not connected to the production Go executable and is not included in release binaries. The integration decision is gated on Go/Rust detection parity, measured peak working set, throughput, and Windows packaging compatibility.
+- Added Rust stable-toolchain formatting, tests, and Clippy validation to both CI and tagged-release validation. Added `Cargo.lock`, ignored Cargo build outputs, and documented the staged migration plan.
+- Added Feature Request, Game Compatibility, and Threat Intelligence issue forms. Security vulnerabilities continue to use private vulnerability reporting rather than a public issue form.
+- Added a Code of Conduct, architecture documentation, and an explicit open-decisions document for licensing and future repository settings. Expanded governance, contribution, support, security, README, changelog, and PR instructions.
+- Added repository labels for false positives/negatives, game compatibility, threat intelligence, Rust, performance, privacy, and maintainer decisions; added `v0.10.0 - Rust core evaluation` and `v1.0.0 - Public project readiness` milestones.
+- Created [Issue #18](https://github.com/fengnaiouo/Tencent-Game-Audit/issues/18) to track the maintainer's source-code/IOC licensing decision and [Issue #19](https://github.com/fengnaiouo/Tencent-Game-Audit/issues/19) to track Rust parity and memory benchmarking.
+- No license file was added because license selection is a legal/maintainer decision. Do not describe the repository as fully open-source-licensed until that decision is made and committed.
+
+**Validation:**
+- Rust `cargo fmt --all -- --check`: passed.
+- Rust `cargo test --locked`: 9 tests passed.
+- Rust `cargo clippy --locked --all-targets -- -D warnings`: passed.
+- Go `rtk go test -count=1 ./...`: 69 tests passed.
+- Go `rtk go vet ./...`: passed.
+- Windows AMD64 Go cross-build with CGO disabled: passed; temporary executable removed.
+- YAML parsing: 9 GitHub workflow/template YAML files passed.
+- `rtk git diff --check`: passed.
+- No actual game directory or fixed volume was scanned. No server was started. No production Rust-vs-Go benchmark or peak-RSS comparison has been claimed.
+- Pre-existing untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain untouched and excluded from staging.
+
+**Publication pending:** PR/CI, merge, and a versioned release decision remain to be completed.

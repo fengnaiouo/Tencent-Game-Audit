@@ -2,6 +2,16 @@
 
 All notable changes to Tencent Game Audit are documented here.
 
+## [Unreleased]
+
+## [0.10.0] - 2026-11-06
+
+### Added
+- Added an experimental Rust scanning core with bounded-memory streaming SHA-256, multi-pattern IOC matching across chunk boundaries, per-pattern match aggregation, and memory-budget-derived worker limits.
+- Added Rust formatting, test, and Clippy checks to CI and release validation; the Rust crate is not yet linked into or bundled with the production Go executable.
+- Expanded GitHub contribution workflows with feature, game-compatibility, and threat-intelligence issue forms, plus project architecture and licensing-decision documentation.
+- Added project Code of Conduct, maintainer decision tracking, release milestones, and explicit Issue triage labels.
+
 ## [0.9.0] - 2026-11-05
 
 ### Fixed
@@ -58,8 +68,6 @@ All notable changes to Tencent Game Audit are documented here.
 
 ### Changed
 - A generic `1B 4C 4A 01` LuaJIT header is now a low-confidence `REVIEW`, not a high-confidence malware `CRITICAL` finding.
-
-## Unreleased
 
 ## [0.3.0] - 2026-11-05
 

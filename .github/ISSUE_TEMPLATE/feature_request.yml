@@ -1,0 +1,49 @@
+name: Feature request
+description: Propose a feature, workflow improvement, or supported platform expansion.
+title: "feature: "
+labels: [enhancement, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: "Describe the user problem. Avoid posting private reports, credentials, or malware samples."
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What are you trying to accomplish, and what is difficult today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain the expected behavior and an example workflow.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Go scanner
+        - Experimental Rust core
+        - Detection rules / IOC
+        - Reports / output formats
+        - Internationalization
+        - Build / release / CI
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Security, privacy, and compatibility impact
+      description: Note any new data collection, filesystem access, network access, privilege, or platform implications.
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: This request is not a vulnerability disclosure; I will use the private security channel for vulnerabilities.
+          required: true

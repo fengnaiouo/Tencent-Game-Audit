@@ -7,7 +7,7 @@
 
 A portable, read-only Windows security auditing tool for Tencent's game ecosystem worldwide. It inventories game and launcher locations and hunts for documented indicators of compromise (IOCs), suspicious persistence, process behavior, DLL content, signatures, and network artifacts.
 
-**[Download the latest release](https://github.com/fengnaiouo/Tencent-Game-Audit/releases/latest) · [Report a bug](https://github.com/fengnaiouo/Tencent-Game-Audit/issues/new?template=bug_report.yml) · [Report a security issue](SECURITY.md)**
+**[Download the latest release](https://github.com/fengnaiouo/Tencent-Game-Audit/releases/latest) · [Report a bug](https://github.com/fengnaiouo/Tencent-Game-Audit/issues/new?template=bug_report.yml) · [Request a feature](https://github.com/fengnaiouo/Tencent-Game-Audit/issues/new?template=feature_request.yml) · [Report a security issue](SECURITY.md)**
 
 > **Scope and evidence discipline:** This project investigates Tencent-operated, controlled, published, and selected investment-related game ecosystems. A publisher or investment relationship is a discovery hint, not proof that a title is owned by Tencent or compromised. NIKKE/K2F indicators remain attributed to that documented incident unless independent evidence supports broader attribution. A clean scan is not proof of a clean system.
 
@@ -25,7 +25,8 @@ A portable, read-only Windows security auditing tool for Tencent's game ecosyste
 
 - Target: Windows 10/11 x64 (the portable release does not require Go, Rust, Python, or network access).
 - Recommended: run elevated for broader visibility into services, processes, registry and other users' files. Non-elevated scans remain useful but may have access limitations.
-- Build: Go 1.23 or newer.
+- Portable release: no Go, Rust, Python, or network access required.
+- Build from source: Go 1.23 or newer. The experimental Rust core additionally requires the stable Rust toolchain and Cargo.
 
 ## Trust, safety and limitations
 
@@ -101,9 +102,25 @@ cd tencent-game-audit
 
 The script runs uncached Go tests, `go vet`, builds Windows amd64 with CGO disabled, and creates the portable ZIP. It does not start a server. Build outputs are ignored by Git and should be attached to a tagged GitHub Release rather than committed to source history.
 
+### Experimental Rust scanning core
+
+The `rust-core/` directory contains an independently tested Rust library for bounded-memory streaming SHA-256 and multi-pattern IOC scanning. Its default read buffer is 4 MiB (configurable from 256 KiB to 16 MiB), and its worker-count calculation respects a configurable memory budget. Matches are aggregated per IOC pattern rather than retaining every occurrence. The implementation handles IOC patterns crossing chunk boundaries and returns per-file errors instead of silently treating partial reads as complete.
+
+**The Rust core is experimental and is not yet linked into the production Go executable or included in release binaries.** Go remains the authoritative scanner and report generator until the Rust implementation demonstrates detection parity, resource behavior, Windows compatibility, and a maintainable integration boundary. To validate the Rust crate:
+
+```powershell
+cd rust-core
+cargo fmt --all -- --check
+cargo test --locked
+cargo clippy --locked --all-targets -- -D warnings
+```
+
+See [Architecture](docs/ARCHITECTURE.md) for the staged integration plan.
+
 ## Repository layout
 
 - `tencent-game-audit/`: Go source, tests, embedded IOC CSV, and portable build script.
+- `rust-core/`: experimental Rust streaming scan library and its independent tests.
 - `docs/`: detection source provenance and technical notes.
 - `docs/PROJECT-SESSION-LOG.md`: append-only project conversation summaries, tool activity, and validation history (not a verbatim account-wide transcript).
 - `docs/NIKKE-K2F-CROSS-GAME-HUNTING.md`: NIKKE / K2F incident leads, evidence boundaries, and the defensive investigation plan for other Tencent game launchers.
@@ -113,7 +130,9 @@ The script runs uncached Go tests, `go vet`, builds Windows amd64 with CGO disab
 
 See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and [detection source notes](docs/DETECTION-SOURCES.md). Every IOC should include a source, first/last-seen context where known, confidence, affected product/region if established, and license/redistribution notes. Do not convert rumors or a Tencent investment relationship into a confirmed compromise claim.
 
-Project decision-making and release responsibilities are described in [GOVERNANCE.md](GOVERNANCE.md). For non-security questions, see [SUPPORT.md](SUPPORT.md).
+Project decision-making and release responsibilities are described in [GOVERNANCE.md](GOVERNANCE.md). For non-security questions, see [SUPPORT.md](SUPPORT.md). See [Architecture](docs/ARCHITECTURE.md) and [open project decisions](docs/OPEN-DECISIONS.md) for the Rust migration and licensing status.
+
+Community participation follows the [Code of Conduct](CODE_OF_CONDUCT.md). Please use the issue forms for bug reports, detection reviews, feature requests, game compatibility, and sourced threat-intelligence submissions. Security vulnerabilities must be disclosed privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 

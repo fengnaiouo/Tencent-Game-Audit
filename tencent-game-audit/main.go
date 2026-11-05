@@ -32,7 +32,7 @@ import (
 var iocFS embed.FS
 
 const clsid = `{E77CC89B-7401-4C04-8CED-149DB35ADD04}`
-const version = "0.9.0"
+const version = "0.10.0"
 
 var knownHashes = map[string]string{
 	"f3e93d049851d5c19552c7d9b73c8be4580dc9d549e8f65f9f0c357c1df9d252": "K2F Sample-A.dll loader",
