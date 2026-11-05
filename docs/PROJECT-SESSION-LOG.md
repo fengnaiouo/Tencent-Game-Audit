@@ -281,4 +281,15 @@ _Append dated results here. Do not rewrite earlier entries; correct mistakes wit
 - Ran a synthetic CLI smoke test using a temporary fixture containing `packages/game/asset.bin` and `packages/game/logs/debug.log`. The HTML report recorded exactly the explicit root, scanned 2 files and 1 log, and stated `System snapshot collected: false` / `Not collected`. No actual game directory or user files were scanned.
 - Temporary executable, fixture, and report were removed. No server was started.
 
-**Publication:** Feature branch `fix/root-only-scope-isolation` is in progress. The three pre-existing unrelated untracked files (`a`, `k2f-iocs-reference.csv`, `riju-x-post.jpg`) remain untouched and are excluded from staging. PR/CI/merge/tag/release verification is pending.
+**Publication status at implementation close-out:** Feature branch `fix/root-only-scope-isolation` was ready for publication. The three pre-existing unrelated untracked files (`a`, `k2f-iocs-reference.csv`, `riju-x-post.jpg`) remained untouched and excluded from staging.
+
+**Publication completed:**
+- Staged only the nine intended source/documentation files; unrelated untracked `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` were not staged.
+- Created commit `0f9e54b` on `fix/root-only-scope-isolation`, pushed it, and opened [PR #12](https://github.com/fengnaiouo/Tencent-Game-Audit/pull/12).
+- Required CI run [42031111123](https://github.com/fengnaiouo/Tencent-Game-Audit/actions/runs/42031111123) passed: Test, Vet, and Windows x64 build.
+- Merged PR #12 at `2026-11-05T12:55:40Z`; merge commit `5133246ceaf0e08f72969b57f2d5a669581ed9ce`. Local `main` and `origin/main` are synchronized at this commit.
+- Created and pushed annotated tag `v0.7.0`. Release workflow [42031318966](https://github.com/fengnaiouo/Tencent-Game-Audit/actions/runs/42031318966) completed successfully and published [GitHub Release v0.7.0](https://github.com/fengnaiouo/Tencent-Game-Audit/releases/tag/v0.7.0).
+- Published assets: `Tencent-Game-Audit-Windows-x64.zip` (1,707,057 bytes) and `SHA256SUMS.txt` (102 bytes). Downloaded the published ZIP, verified its SHA-256 against the published checksum file, extracted it, and ran the executable; it printed `Tencent Game Audit v0.7.0`. ZIP SHA-256: `794b6685cf9cb246a99e42a56f2a273e072bc0ab09bf843de585843c44cf106f`.
+- Release workflow reported a non-blocking Node.js 20 deprecation annotation for `actions/upload-artifact@v4`; both build/package and publish jobs succeeded. Track upgrading that action separately.
+- Re-verified `main` branch protection: required PR and `Test and vet` check, strict status checks, administrators included, force pushes/deletion disabled, and conversation resolution required.
+- Final `rtk git status --short --branch`: `main...origin/main`; only the three unrelated pre-existing untracked files remain. No server was started and no real game directory was scanned.
