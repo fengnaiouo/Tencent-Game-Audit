@@ -12,6 +12,70 @@ import (
 	"unicode/utf16"
 )
 
+func TestBuildScanScopeRootOnlyUsesOnlyExplicitRoots(t *testing.T) {
+	first := filepath.Join(t.TempDir(), "Delta Force")
+	second := filepath.Join(t.TempDir(), "WeGame")
+	r := &Report{}
+	scope := buildScanScope(true, []string{first, second, first}, r)
+	if scope.collectSystemSnapshot {
+		t.Fatal("strict root-only scope must not collect a global system snapshot")
+	}
+	if len(scope.gameRoots) != 2 || len(scope.scanRoots) != 2 {
+		t.Fatalf("strict root-only scope should contain exactly two unique explicit roots: %+v", scope)
+	}
+	for _, got := range scope.scanRoots {
+		if !filepath.IsAbs(got) {
+			t.Errorf("scan root is not normalized to an absolute path: %q", got)
+		}
+		if !strings.EqualFold(got, first) && !strings.EqualFold(got, second) {
+			t.Errorf("unexpected auto-discovered path in strict scope: %q", got)
+		}
+	}
+}
+
+func TestReadFileBoundedEnforcesLimitEvenWhenMetadataIsStale(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "growing.bin")
+	if err := os.WriteFile(path, []byte("0123456789"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	data, err := readFileBounded(path, 4)
+	if err == nil || !strings.Contains(err.Error(), "bounded read limit") {
+		t.Fatalf("expected hard read limit error, got data=%q err=%v", data, err)
+	}
+	data, err = readFileBounded(path, 10)
+	if err != nil || string(data) != "0123456789" {
+		t.Fatalf("exact-limit file should be readable, got %q err=%v", data, err)
+	}
+}
+
+func TestDeepInspectEnforcesReadLimitAfterMetadataCheck(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "growing.bin")
+	if err := os.WriteFile(path, []byte("0123456789"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := &Report{}
+	deepInspectFile(path, 4, 4, r)
+	if r.SkippedFiles != 1 || len(r.Findings) != 1 || r.Findings[0].Category != "Deep analysis size limit" {
+		t.Fatalf("deep inspection did not enforce the bounded read: %+v", r)
+	}
+}
+
+func TestRootOnlyScanIncludesNormallySkippedPackagesDirectory(t *testing.T) {
+	root := t.TempDir()
+	nested := filepath.Join(root, "packages", "game")
+	if err := os.MkdirAll(nested, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "resource.bin"), []byte("ordinary game data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := &Report{}
+	scanRoots([]string{root}, config{maxFiles: 10, maxPerRoot: 10, maxBytes: 1024, rootOnly: true}, r)
+	if r.ScannedFiles != 1 {
+		t.Fatalf("strict root-only scan should include packages subtree, scanned=%d findings=%+v", r.ScannedFiles, r.Findings)
+	}
+}
+
 func TestClassifySeparatesNikkeFromOtherTitles(t *testing.T) {
 	if got := classify("NIKKE", "Level Infinite"); got == "" || got == "Unclassified game; scanned for known K2F indicators only" {
 		t.Fatalf("NIKKE not classified: %q", got)
@@ -237,7 +301,7 @@ func TestLogForensicsFindsNIKKEMarkersAndRedactsSecrets(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &Report{}
-	scanLogFiles([]string{root}, r)
+	scanLogFiles([]string{root}, r, false)
 	if r.LogFilesScanned != 1 {
 		t.Fatalf("analyzed %d log files, want 1", r.LogFilesScanned)
 	}
@@ -265,7 +329,7 @@ func TestLogForensicsBareK2FChannelIsReviewOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &Report{}
-	scanLogFiles([]string{root}, r)
+	scanLogFiles([]string{root}, r, false)
 	if len(r.Findings) != 1 || r.Findings[0].Severity != "REVIEW" {
 		t.Fatalf("an isolated channel string must remain REVIEW, got %+v", r.Findings)
 	}
@@ -280,7 +344,7 @@ func TestLogForensicsBenignLogAndRotatedLog(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &Report{}
-	scanLogFiles([]string{root}, r)
+	scanLogFiles([]string{root}, r, false)
 	if r.LogFilesScanned != 2 {
 		t.Fatalf("expected current and rotated logs to be analyzed, got %d", r.LogFilesScanned)
 	}
@@ -330,7 +394,7 @@ func TestLogForensicsBinaryCandidateIsNotRendered(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &Report{}
-	scanLogFiles([]string{root}, r)
+	scanLogFiles([]string{root}, r, false)
 	if r.LogFilesScanned != 1 {
 		t.Fatalf("expected one binary log candidate to be inspected, got %+v", r)
 	}
@@ -351,7 +415,7 @@ func TestLogForensicsDetectsForwardSlashTinygetMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &Report{}
-	scanLogFiles([]string{root}, r)
+	scanLogFiles([]string{root}, r, false)
 	if len(r.Findings) != 1 || r.Findings[0].Category != "NIKKE/K2F launcher payload-download marker" || r.Findings[0].Severity != "CRITICAL" {
 		t.Fatalf("forward-slash tinyget marker was not recognized: %+v", r.Findings)
 	}
@@ -384,9 +448,25 @@ func TestLogForensicsReportsOversizedLogAsLimitation(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &Report{}
-	scanLogFiles([]string{root}, r)
+	scanLogFiles([]string{root}, r, false)
 	if r.LogFilesScanned != 0 || r.SkippedFiles != 1 || len(r.Findings) != 1 || r.Findings[0].Category != "Log file size limit" {
 		t.Fatalf("oversized log should be an explicit scan limitation, got %+v", r)
+	}
+}
+
+func TestRootOnlyLogForensicsIncludesNormallySkippedDirectories(t *testing.T) {
+	root := t.TempDir()
+	nested := filepath.Join(root, "packages", "game", "logs")
+	if err := os.MkdirAll(nested, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, "debug.log"), []byte("launcher ready\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := &Report{}
+	scanLogFiles([]string{root}, r, true)
+	if r.LogFilesScanned != 1 {
+		t.Fatalf("strict root-only log scan should include packages subtree, got %+v", r)
 	}
 }
 
@@ -600,8 +680,9 @@ func TestLoadedK2FPersistenceModuleIsCritical(t *testing.T) {
 
 func TestWriteReportFormatsAndEscaping(t *testing.T) {
 	report := &Report{
-		Version: "0.6.0", Generated: "2026-11-05T12:00:00+08:00", Language: "zh-Hant", Mode: "read-only",
+		Version: "0.7.0", Generated: "2026-11-05T12:00:00+08:00", Language: "zh-Hant", Mode: "read-only",
 		Computer: "測試主機", User: "測試使用者", ScannedFiles: 2, SkippedFiles: 1, LogFilesScanned: 3,
+		ScanRoots: []string{`D:\Games\Example`}, SystemSnapshotCollected: true,
 		Games:       []Game{{Title: "測試遊戲", InstallPath: "C:\\Games\\測試", Source: "fixture", Relation: "unclassified"}},
 		Findings:    []Finding{{Severity: "REVIEW", Category: "HTML injection", Path: "=HYPERLINK(\"https://invalid\")", Evidence: "</td><script>alert(1)</script> | 證據", Confidence: "low", Signer: "Example & Co"}},
 		Limitations: []string{"無法讀取的項目不代表安全"},
@@ -666,6 +747,29 @@ func TestWriteReportRejectsUnknownFormat(t *testing.T) {
 	err := writeReport(filepath.Join(t.TempDir(), "report.bin"), "exe", &Report{})
 	if err == nil || !strings.Contains(err.Error(), "unsupported report format") {
 		t.Fatalf("expected unsupported-format error, got %v", err)
+	}
+}
+
+func TestReportsClearlyMarkUncollectedSystemSnapshotAndScanRoots(t *testing.T) {
+	report := &Report{Version: "0.7.0", Mode: "read-only deep content analysis (strict explicit-root scope)", ScanRoots: []string{`D:\Delta Force`}, SystemSnapshotCollected: false}
+	for _, format := range []string{"json", "txt", "html", "csv", "md"} {
+		t.Run(format, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "scope-report."+format)
+			if err := writeReport(path, format, report); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			content := string(data)
+			if !strings.Contains(content, "Delta Force") {
+				t.Fatalf("%s report omitted explicit scan root: %s", format, content)
+			}
+			if !strings.Contains(strings.ToLower(content), "system_snapshot_collected") && !strings.Contains(content, "Not collected") && !strings.Contains(content, "not collected") {
+				t.Fatalf("%s report did not disclose that the system snapshot was skipped", format)
+			}
+		})
 	}
 }
 

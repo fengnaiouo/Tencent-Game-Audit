@@ -32,7 +32,7 @@ import (
 var iocFS embed.FS
 
 const clsid = `{E77CC89B-7401-4C04-8CED-149DB35ADD04}`
-const version = "0.6.0"
+const version = "0.7.0"
 
 var knownHashes = map[string]string{
 	"f3e93d049851d5c19552c7d9b73c8be4580dc9d549e8f65f9f0c357c1df9d252": "K2F Sample-A.dll loader",
@@ -112,19 +112,21 @@ type Game struct {
 	Relation    string `json:"relation"`
 }
 type Report struct {
-	Version         string         `json:"scanner_version"`
-	Generated       string         `json:"generated"`
-	Language        string         `json:"language"`
-	Computer        string         `json:"computer"`
-	User            string         `json:"user"`
-	Mode            string         `json:"mode"`
-	ScannedFiles    int            `json:"scanned_files"`
-	SkippedFiles    int            `json:"skipped_files"`
-	LogFilesScanned int            `json:"log_files_scanned"`
-	Games           []Game         `json:"game_inventory"`
-	Findings        []Finding      `json:"findings"`
-	System          SystemSnapshot `json:"system_snapshot"`
-	Limitations     []string       `json:"limitations"`
+	Version                 string         `json:"scanner_version"`
+	Generated               string         `json:"generated"`
+	Language                string         `json:"language"`
+	Computer                string         `json:"computer"`
+	User                    string         `json:"user"`
+	Mode                    string         `json:"mode"`
+	ScanRoots               []string       `json:"scan_roots"`
+	SystemSnapshotCollected bool           `json:"system_snapshot_collected"`
+	ScannedFiles            int            `json:"scanned_files"`
+	SkippedFiles            int            `json:"skipped_files"`
+	LogFilesScanned         int            `json:"log_files_scanned"`
+	Games                   []Game         `json:"game_inventory"`
+	Findings                []Finding      `json:"findings"`
+	System                  SystemSnapshot `json:"system_snapshot"`
+	Limitations             []string       `json:"limitations"`
 }
 
 type config struct {
@@ -135,6 +137,29 @@ type config struct {
 	maxPerRoot   int
 	maxBytes     int64
 	roots        []string
+	rootOnly     bool
+}
+
+// readFileBounded prevents a file that grows after its metadata check from
+// causing an unbounded allocation. The extra byte distinguishes exact-limit
+// files from files that exceed the configured limit.
+func readFileBounded(path string, maxBytes int64) ([]byte, error) {
+	if maxBytes < 0 || maxBytes == int64(^uint64(0)>>1) {
+		return nil, fmt.Errorf("invalid read limit %d", maxBytes)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > maxBytes {
+		return nil, fmt.Errorf("file exceeds bounded read limit of %d bytes", maxBytes)
+	}
+	return b, nil
 }
 
 // deepInspectFile performs bounded, read-only content analysis on arbitrary
@@ -147,10 +172,14 @@ func deepInspectFile(path string, size, maxBytes int64, r *Report) {
 		}
 		return
 	}
-	b, err := os.ReadFile(path)
+	b, err := readFileBounded(path, maxBytes)
 	if err != nil {
 		r.SkippedFiles++
-		addFinding(r, "INFO", "Deep analysis read failure", path, err.Error(), "scan limitation")
+		category := "Deep analysis read failure"
+		if strings.Contains(err.Error(), "bounded read limit") {
+			category = "Deep analysis size limit"
+		}
+		addFinding(r, "INFO", category, path, err.Error(), "scan limitation")
 		return
 	}
 	sum := sha256.Sum256(b)
@@ -498,7 +527,7 @@ func inspectFile(path string, size int64, r *Report, maxBytes int64) {
 	pathLower := strings.ToLower(path)
 	cacheFile := strings.Contains(pathLower, "leveldb") || strings.Contains(pathLower, "code cache") || strings.Contains(pathLower, "tinyget") || strings.EqualFold(name, "transportsecurity") || strings.EqualFold(name, "network persistent state") || strings.Contains(pathLower, "reporting and nel")
 	if size > 0 && size <= 64<<20 && (cacheFile || ext == ".log" || ext == ".ldb" || ext == ".js" || ext == ".lua" || ext == ".bundle" || ext == ".dat" || ext == ".bin" || ext == ".exe" || ext == ".dll" || ext == ".sys" || name == "data_3") {
-		b, e := os.ReadFile(path)
+		b, e := readFileBounded(path, 64<<20)
 		if e == nil {
 			low := strings.ToLower(string(b))
 			hits := []string{}
@@ -568,6 +597,9 @@ func inspectFile(path string, size int64, r *Report, maxBytes int64) {
 					addFinding(r, sev, "K2F byte signature", path, ioc.Description+" ("+ioc.Value+")", confidence)
 				}
 			}
+		} else {
+			r.SkippedFiles++
+			addFinding(r, "INFO", "File content read limitation", path, e.Error(), "scan limitation")
 		}
 	}
 	if strings.HasPrefix(name, "k2f-bcreds") || strings.HasPrefix(name, "k2f_screen") {
@@ -734,7 +766,7 @@ func scanRoots(roots []string, cfg config, r *Report) {
 				if isSHA256DirName(d.Name()) && strings.EqualFold(filepath.Base(filepath.Dir(path)), "PlatformExperienceHelper") {
 					addFinding(r, "WARNING", "Possible residual browser persistence directory", path, "A 64-hex folder exists under PlatformExperienceHelper; verify whether the documented DLL is present", "medium")
 				}
-				if path != root && (d.Type()&os.ModeSymlink != 0 || skipDir(d.Name())) {
+				if path != root && (d.Type()&os.ModeSymlink != 0 || (!cfg.rootOnly && skipDir(d.Name()))) {
 					return filepath.SkipDir
 				}
 				return nil
@@ -1025,13 +1057,40 @@ func collectTempArtifacts() []string {
 	return unique(roots)
 }
 
+type scanScope struct {
+	gameRoots             []string
+	scanRoots             []string
+	collectSystemSnapshot bool
+}
+
+// buildScanScope centralizes the boundary between strict explicit-root scans
+// and the normal host-wide discovery mode. The strict branch must return
+// before any registry, launcher, profile, volume, Steam, or Epic discovery.
+func buildScanScope(rootOnly bool, explicitRoots []string, r *Report) scanScope {
+	if rootOnly {
+		roots := unique(explicitRoots)
+		return scanScope{gameRoots: roots, scanRoots: roots, collectSystemSnapshot: false}
+	}
+	gameRoots := append([]string{}, registryInventory(r)...)
+	gameRoots = append(gameRoots, steamRoots()...)
+	gameRoots = append(gameRoots, epicRoots()...)
+	gameRoots = append(gameRoots, discoverTencentRoots()...)
+	gameRoots = append(gameRoots, discoverGameLibraryRoots(r)...)
+	gameRoots = append(gameRoots, explicitRoots...)
+	scanRoots := append([]string{}, gameRoots...)
+	scanRoots = append(scanRoots, collectLauncherRoots()...)
+	// Inspect only K2F-named temporary artifacts, not the user's entire TEMP tree.
+	scanRoots = append(scanRoots, collectTempArtifacts()...)
+	return scanScope{gameRoots: unique(gameRoots), scanRoots: unique(scanRoots), collectSystemSnapshot: true}
+}
+
 func main() {
 	showVersion := flag.Bool("version", false, "Print scanner version and exit")
 	full := flag.Bool("full", false, "Raise scan budget; still skips Windows/system trees")
 	deep := flag.Bool("deep", false, "Deep read-only content analysis of every file in selected roots; hashes files and inspects embedded indicators")
 	noLogs := flag.Bool("no-logs", false, "Disable enhanced log discovery/context analysis; general file IOC scanning remains enabled")
 	systemOnly := flag.Bool("system-only", false, "Collect Windows persistence/process/network snapshot without walking game files")
-	rootOnly := flag.Bool("root-only", false, "Scan only folders supplied with -root; skip automatic game/browser discovery")
+	rootOnly := flag.Bool("root-only", false, "Strictly scan only folders supplied with -root; skip registry discovery and the global Windows system snapshot")
 	jsonPath := flag.String("json", "", "Write a JSON report to this path (default: timestamped report beside executable)")
 	reportFormat := flag.String("format", "json", "Report format: json, txt, html, csv, or md")
 	reportPath := flag.String("out", "", "Report output path (extension is not used to infer format)")
@@ -1065,7 +1124,7 @@ func main() {
 		limit = 1000000
 		perRootLimit = 250000
 	}
-	cfg := config{full: *full, deep: *deep, logForensics: !*noLogs, maxFiles: limit, maxPerRoot: perRootLimit, maxBytes: 512 << 20, roots: extra}
+	cfg := config{full: *full, deep: *deep, logForensics: !*noLogs, maxFiles: limit, maxPerRoot: perRootLimit, maxBytes: 512 << 20, roots: extra, rootOnly: *rootOnly}
 	mode := "read-only"
 	if *deep {
 		mode = "read-only deep content analysis"
@@ -1076,45 +1135,44 @@ func main() {
 	if *systemOnly {
 		mode = "read-only system snapshot"
 	}
-	r := &Report{Version: version, Generated: time.Now().Format(time.RFC3339), Language: lang, Computer: os.Getenv("COMPUTERNAME"), User: os.Getenv("USERNAME"), Mode: mode, Games: []Game{}, Findings: []Finding{}, Limitations: []string{
+	if *rootOnly {
+		mode += " (strict explicit-root scope)"
+	}
+	r := &Report{Version: version, Generated: time.Now().Format(time.RFC3339), Language: lang, Computer: os.Getenv("COMPUTERNAME"), User: os.Getenv("USERNAME"), Mode: mode, ScanRoots: unique(extra), Games: []Game{}, Findings: []Finding{}, Limitations: []string{
 		"This scanner treats Tencent game / launcher exposure as a broad hunting hypothesis, not a proven blanket compromise. K2F-specific indicators remain attributed to the NIKKE / Level Infinite incident unless independent samples establish wider reuse.",
 		"Tencent portfolio inventory is best-effort: uninstall metadata, Steam libraries and Epic manifests do not cover every launcher, portable install, region or custom path.",
-		"System persistence/process/network snapshot is point-in-time and best-effort; protected processes and other users' private profile data may be inaccessible without elevation.",
 		"Raw LevelDB/Code Cache scans do not decompress Chromium records; a no-hit result does not exclude compressed or deleted evidence.",
 		"Deep mode hashes and inspects file contents without executing them; encrypted, compressed, packed, sparse, inaccessible, and oversized files may still require specialist tooling.",
 		"This is IOC hunting, not antivirus, EDR, memory forensics or proof that a device is clean. Historical IOC hits may indicate past contact, not current execution.",
 		"No live C2, domain, IP, URL or third-party service is contacted. No files, registry keys, firewall, hosts or Defender settings are changed.",
 	}}
-	regRoots := registryInventory(r)
-	gameRoots := append([]string{}, regRoots...)
-	if *rootOnly {
-		gameRoots = append([]string{}, extra...)
-	} else {
-		gameRoots = append(gameRoots, steamRoots()...)
-		gameRoots = append(gameRoots, epicRoots()...)
-		gameRoots = append(gameRoots, discoverTencentRoots()...)
-		gameRoots = append(gameRoots, discoverGameLibraryRoots(r)...)
-		gameRoots = append(gameRoots, extra...)
-	}
+	scope := buildScanScope(*rootOnly, extra, r)
+	gameRoots := scope.gameRoots
+	scan := scope.scanRoots
+	r.ScanRoots = append([]string{}, scan...)
 	for _, root := range unique(gameRoots) {
 		title := filepath.Base(root)
 		rel := classify(title, "")
-		r.Games = append(r.Games, Game{Title: title, InstallPath: root, Source: "Discovered install/library path", Relation: rel})
-	}
-	scan := append([]string{}, gameRoots...)
-	if !*rootOnly {
-		scan = append(scan, collectLauncherRoots()...)
-		// Inspect only K2F-named temporary artifacts, not the user's entire TEMP tree.
-		scan = append(scan, collectTempArtifacts()...)
+		source := "Discovered install/library path"
+		if *rootOnly {
+			source = "Explicit -root argument"
+		}
+		r.Games = append(r.Games, Game{Title: title, InstallPath: root, Source: source, Relation: rel})
 	}
 	if !*systemOnly {
 		scanRoots(scan, cfg, r)
 		if cfg.logForensics {
-			scanLogFiles(scan, r)
+			scanLogFiles(scan, r, *rootOnly)
 		}
 	}
-	r.System = collectWindowsSnapshot()
-	r.System.addFindings(r)
+	if scope.collectSystemSnapshot {
+		r.Limitations = append(r.Limitations, "System persistence/process/network snapshot is point-in-time and best-effort; protected processes and other users' private profile data may be inaccessible without elevation.")
+		r.System = collectWindowsSnapshot()
+		r.SystemSnapshotCollected = true
+		r.System.addFindings(r)
+	} else {
+		r.Limitations = append(r.Limitations, "Strict -root-only mode intentionally did not query uninstall registry inventory, global persistence, services, scheduled tasks, startup folders, processes, loaded modules, TCP connections, DNS cache, hosts, named pipes, or Defender status.")
+	}
 	enrichFindingSignatures(r)
 	if r.ScannedFiles == 0 && !*systemOnly {
 		addFinding(r, "INFO", "No scan roots accessible", "", "No game or launcher directories were discovered; supply -root paths.", "n/a")

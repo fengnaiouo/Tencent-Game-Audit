@@ -257,3 +257,28 @@ _Append dated results here. Do not rewrite earlier entries; correct mistakes wit
 - `rtk git log -4 --oneline --decorate` confirmed local `main` and `origin/main` both at `469f246` (`Complete audit report formats and project activity log (#6)`).
 - The two pre-existing unrelated untracked files `k2f-iocs-reference.csv` and `riju-x-post.jpg` remain untouched and excluded from GitHub.
 - This log update itself is being submitted separately through a follow-up documentation PR because the newly protected `main` branch now requires pull requests and CI. The main implementation is already merged; this follow-up only appends publication/verification history.
+
+### 2026-11-05 — Strict `-root-only` scope isolation (v0.7.0)
+
+**User request:** The user reported that `-deep -root-only -root "D:\Delta Force"` still appeared to scan other folders and authorized the proposed correction with “好”.
+
+**Root cause confirmed:** `main()` called `registryInventory()` and `collectWindowsSnapshot()` unconditionally. `registryInventory()` queried uninstall metadata and K2F COM persistence; the Windows snapshot enumerated global Run keys, services, scheduled tasks, Startup folders, COM registrations, processes/modules, TCP connections, DNS cache, hosts, named pipes, and Defender status. In addition, the shared `skipDir()` exclusions were applied inside explicit roots, so directories such as `packages` could be omitted from both file and log traversal.
+
+**Implementation:**
+- Added `buildScanScope()` with an early strict-root branch. With `-root-only`, only normalized, deduplicated `-root` arguments are returned; registry, Steam/Epic, fixed-volume, Tencent, launcher, profile, and TEMP discovery are not invoked.
+- Strict root-only mode no longer calls `collectWindowsSnapshot()` and explicitly records that global host checks were not collected. Normal and `-system-only` modes retain their existing host snapshot behavior.
+- Bypassed general auto-discovery directory exclusions inside explicit root-only roots while continuing to refuse symbolic-link/reparse-point traversal. Applied the same rule to Log Forensics.
+- Added `scan_roots` and `system_snapshot_collected` to the canonical report model and all JSON/TXT/HTML/CSV/Markdown output. Reports state when the global snapshot was not collected.
+- Replaced `os.ReadFile()` content paths for deep and ordinary IOC reads with `readFileBounded()` to enforce hard byte limits even if a file grows after metadata inspection.
+- Updated scanner version and documentation to v0.7.0.
+
+**Regression coverage and validation:**
+- Added tests for strict scan-scope selection, bounded reads with stale metadata, nested `packages` traversal in both file scanning and Log Forensics, and scope disclosure in all five report formats.
+- `rtk go test -count=1 ./...`: 64 tests passed.
+- `rtk go vet ./...`: passed.
+- `rtk git diff --check`: passed.
+- Built a temporary Windows AMD64 executable; `-version` printed `Tencent Game Audit v0.7.0`.
+- Ran a synthetic CLI smoke test using a temporary fixture containing `packages/game/asset.bin` and `packages/game/logs/debug.log`. The HTML report recorded exactly the explicit root, scanned 2 files and 1 log, and stated `System snapshot collected: false` / `Not collected`. No actual game directory or user files were scanned.
+- Temporary executable, fixture, and report were removed. No server was started.
+
+**Publication:** Feature branch `fix/root-only-scope-isolation` is in progress. The three pre-existing unrelated untracked files (`a`, `k2f-iocs-reference.csv`, `riju-x-post.jpg`) remain untouched and are excluded from staging. PR/CI/merge/tag/release verification is pending.

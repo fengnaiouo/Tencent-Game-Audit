@@ -78,7 +78,7 @@ func isLogCandidate(path string) bool {
 	return false
 }
 
-func scanLogFiles(roots []string, r *Report) {
+func scanLogFiles(roots []string, r *Report, strictRoots bool) {
 	seen := map[string]bool{}
 	globalCount := 0
 	for _, root := range unique(roots) {
@@ -107,7 +107,7 @@ func scanLogFiles(roots []string, r *Report) {
 				return nil
 			}
 			if entry.IsDir() {
-				if path != root && (entry.Type()&os.ModeSymlink != 0 || skipDir(entry.Name())) {
+				if path != root && (entry.Type()&os.ModeSymlink != 0 || (!strictRoots && skipDir(entry.Name()))) {
 					return filepath.SkipDir
 				}
 				return nil
