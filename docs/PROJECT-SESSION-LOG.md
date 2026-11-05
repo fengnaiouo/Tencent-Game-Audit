@@ -146,7 +146,14 @@ _Append dated results here. Do not rewrite earlier entries; correct mistakes wit
 - No installed game directory was scanned and no actual infection assessment was performed. The smoke test did collect the scanner's normal local Windows system snapshot; no server was started and no network/C2 endpoint was contacted.
 - Build outputs and synthetic fixtures were written to the OS temp directory, not over the existing root EXE, `portable-release`, or ZIP. Temporary test artifacts are removed after validation.
 
-**Publication:** PR/CI/merge/tag/GitHub Release verification remains pending.
+**Publication and release verification:**
+- Pushed `feat/v0.6.0-log-forensics` and opened [PR #10](https://github.com/fengnaiouo/Tencent-Game-Audit/pull/10).
+- Required GitHub check `Test and vet` passed, including hosted Go tests, vet, and Windows x64 build. Merged PR #10 at `2026-11-05T12:29:36Z`; merge commit `e753f9cb8ef40507713a0438edc59a64ecf1bec5`.
+- Created and pushed annotated tag `v0.6.0` at the merge commit.
+- Release workflow [42027649239](https://github.com/fengnaiouo/Tencent-Game-Audit/actions/runs/42027649239) completed successfully; GitHub Release [v0.6.0](https://github.com/fengnaiouo/Tencent-Game-Audit/releases/tag/v0.6.0) is published.
+- Release assets: `Tencent-Game-Audit-Windows-x64.zip` (1,703,681 bytes) and `SHA256SUMS.txt`. Downloaded the published ZIP, verified it against the checksum file, extracted it, and ran the executable; it printed `Tencent Game Audit v0.6.0`. Published ZIP SHA-256: `f579d82d7eec20e4119e84ca83b3626706b87586e843d970fdcc4b84aaaf8c8b`.
+- Release workflow emitted a non-blocking Node.js 20 deprecation annotation for `actions/upload-artifact@v4`; the release job still succeeded. Track the artifact action upgrade separately.
+- Local `main` is synchronized with `origin/main` at the release commit. Unrelated untracked files `a`, `k2f-iocs-reference.csv`, and `riju-x-post.jpg` remain untouched and un-staged. No server was started.
 
 ### 2026-11-05 — NIKKE / K2F incident leads and cross-game hunting scope
 
